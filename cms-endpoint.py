@@ -110,7 +110,6 @@ async def handle_client(reader, writer):
 
                 save_message(callsign, msg_lines)
                 writer.write(b";OK: Message received\r")
-                writer.write(b"CMS>\r")
                 await writer.drain()
 
             elif line == "FF":
@@ -127,7 +126,6 @@ async def handle_client(reader, writer):
 
             else:
                 writer.write(b";NAK: Unknown command\r")
-                writer.write(b"CMS>\r")
                 await writer.drain()
 
         except (asyncio.IncompleteReadError, ConnectionResetError):
