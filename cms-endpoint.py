@@ -129,15 +129,11 @@ async def handle_client(reader, writer):
                 print(f"[{callsign}] F> received with serial: {serial_number}")
                 writer.write(b"FS Y\r")
                 await writer.drain()
-                state = "READY_TO_RECEIVE"
 
-            elif line.startswith(";PR:"):
-                if state != "READY_TO_RECEIVE" or expected_bytes is None:
-                    writer.write(b";NAK: PR unexpected or FC missing\r")
+                if expected_bytes is None:
+                    writer.write(b";NAK: Missing size from FC\r")
                     await writer.drain()
                     continue
-                writer.write(b";OK: Ready to receive message\r")
-                await writer.drain()
 
                 msg_bytes = b""
                 while len(msg_bytes) < expected_bytes:
