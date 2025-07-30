@@ -110,8 +110,9 @@ async def handle_client(reader, writer):
                     await writer.drain()
 
             elif state == "WAIT_FOR_FGT":
-                if line == "F>":
-                    print(f"[{callsign}] Received F>, sending FS Y")
+                if line.startswith("F>"):
+                    seq = line[2:].strip()  # Extract optional sequence number after 'F>'
+                    print(f"[{callsign}] Received F> with sequence '{seq}', sending FS Y")
                     writer.write(b"FS Y\r")
                     await writer.drain()
                     state = "RECEIVE_MESSAGE"
