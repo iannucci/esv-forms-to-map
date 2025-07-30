@@ -48,13 +48,18 @@ def decode_b2f(lines):
 
 def save_message(callsign, msg_lines):
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    filename = os.path.join(MAILBOX_DIR, f"{callsign}_{timestamp}.b2f")
-    with open(filename, "w", encoding="utf-8") as f:
+    raw_filename = os.path.join(MAILBOX_DIR, f"{callsign}_{timestamp}.b2f")
+    with open(raw_filename, "w", encoding="utf-8") as f:
         for line in msg_lines:
             f.write(line + "\r\n")
 
     headers, body = decode_b2f(msg_lines)
-    print(f"[MAIL] Saved message for {callsign} to {filename}")
+    decoded_filename = os.path.join(MAILBOX_DIR, f"{callsign}_{timestamp}.txt")
+    with open(decoded_filename, "w", encoding="utf-8") as f:
+        for line in body:
+            f.write(line + "\n")
+
+    print(f"[MAIL] Saved message for {callsign} to {raw_filename} and decoded to {decoded_filename}")
     print(f"[HEADERS] {json.dumps(headers, indent=2)}")
 
 async def handle_client(reader, writer):
@@ -92,13 +97,8 @@ async def handle_client(reader, writer):
     await writer.drain()
 
     state = "COMMAND"
-    serial_number = None
+    proposal_queue = []
     expected_bytes = None
-    msg_type = None
-    msg_id = None
-    size1 = None
-    size2 = None
-    status_flag = None
 
     while True:
         try:
@@ -106,34 +106,36 @@ async def handle_client(reader, writer):
             print(f"[{callsign}] Received: {line}")
 
             if line.startswith("FC"):
-                if state != "COMMAND":
+                if state not in ["COMMAND", "WAIT_FOR_PROPOSAL"]:
                     writer.write(b";NAK: Unexpected FC\r")
                     await writer.drain()
                     continue
                 parts = line.split()
                 if len(parts) >= 6:
                     _, msg_type, msg_id, size1, size2, status_flag = parts[:6]
-                    expected_bytes = int(size2)
-                    print(f"[{callsign}] FC received: msg_type={msg_type}, msg_id={msg_id}, size1={size1}, size2={size2}, status_flag={status_flag}")
+                    proposal_queue.append({
+                        "msg_type": msg_type,
+                        "msg_id": msg_id,
+                        "size1": int(size1),
+                        "size2": int(size2),
+                        "status_flag": status_flag
+                    })
                     state = "WAIT_FOR_PROPOSAL"
                 else:
-                    print(f"[{callsign}] FC line malformed: {line}")
+                    writer.write(b";NAK: Malformed FC\r")
+                    await writer.drain()
 
             elif line.startswith("F>"):
-                if state != "WAIT_FOR_PROPOSAL":
+                if state != "WAIT_FOR_PROPOSAL" or not proposal_queue:
                     writer.write(b";NAK: Unexpected F>\r")
                     await writer.drain()
                     continue
-                parts = line.split()
-                serial_number = parts[1] if len(parts) > 1 else None
-                print(f"[{callsign}] F> received with serial: {serial_number}")
+                serial_number = line.split()[1] if len(line.split()) > 1 else None
+                current_proposal = proposal_queue.pop(0)
+                expected_bytes = current_proposal["size2"]
+                print(f"[{callsign}] F> received, serial={serial_number}, expecting {expected_bytes} bytes")
                 writer.write(b"FS Y\r")
                 await writer.drain()
-
-                if expected_bytes is None:
-                    writer.write(b";NAK: Missing size from FC\r")
-                    await writer.drain()
-                    continue
 
                 msg_bytes = b""
                 while len(msg_bytes) < expected_bytes:
@@ -147,10 +149,11 @@ async def handle_client(reader, writer):
                 save_message(callsign, msg_lines)
                 writer.write(b";OK: Message received\r")
                 await writer.drain()
+
                 state = "COMMAND"
 
             elif line == "FF":
-                print(f"[{callsign}] Received unexpected FF")
+                print(f"[{callsign}] Received FF (end of message batch)")
                 continue
 
             elif line.upper() == "EXIT":
