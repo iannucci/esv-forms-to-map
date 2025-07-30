@@ -77,7 +77,7 @@ async def handle_client(reader, writer):
 
     stored_password = USERS.get(callsign)
     if stored_password is None or stored_password != password:
-        writer.write(b";NAK\r")
+        writer.write(b";NAK\r\n")
         await writer.drain()
         print(f"[LOGIN] Invalid password for {callsign}")
         writer.close()
@@ -91,75 +91,79 @@ async def handle_client(reader, writer):
     writer.write(b"CMS>\r")
     await writer.drain()
 
-    state = "WAIT_FOR_COMMAND"
-    state_vars = {}
+    state = "COMMAND"
+    serial_number = None
+    expected_bytes = None
+    msg_type = None
+    msg_id = None
+    size1 = None
+    size2 = None
+    status_flag = None
 
     while True:
         try:
             line = (await reader.readuntil(b"\r")).decode("utf-8", errors="ignore").strip()
             print(f"[{callsign}] Received: {line}")
 
-            if state == "WAIT_FOR_COMMAND":
-                if line.startswith(";PR:"):
-                    print(f"[{callsign}] Proposal received")
-                    writer.write(b";OK: Ready to receive proposals\r")
+            if line.startswith("FC"):
+                if state != "COMMAND":
+                    writer.write(b";NAK: Unexpected FC\r")
                     await writer.drain()
-                    state = "RECEIVING_PROPOSALS"
-                    state_vars['proposals'] = []
-                elif line.upper() == "EXIT":
-                    print(f"[{callsign}] Session terminated by client")
-                    break
+                    continue
+                parts = line.split()
+                if len(parts) >= 6:
+                    _, msg_type, msg_id, size1, size2, status_flag = parts[:6]
+                    expected_bytes = int(size2)
+                    print(f"[{callsign}] FC received: msg_type={msg_type}, msg_id={msg_id}, size1={size1}, size2={size2}, status_flag={status_flag}")
+                    state = "WAIT_FOR_PROPOSAL"
                 else:
-                    writer.write(b";NAK: Unknown or unexpected command\r")
-                    await writer.drain()
+                    print(f"[{callsign}] FC line malformed: {line}")
 
-            elif state == "RECEIVING_PROPOSALS":
-                if line.startswith(";PR:"):
-                    state_vars['proposals'].append(line)
-                    writer.write(b";OK\r")
+            elif line.startswith("F>"):
+                if state != "WAIT_FOR_PROPOSAL":
+                    writer.write(b";NAK: Unexpected F>\r")
                     await writer.drain()
-                elif line.startswith("FC"):
-                    parts = line.split()
-                    if len(parts) >= 6:
-                        cmd, msg_type, msg_id, size1, size2, status_flag = parts[:6]
-                        print(f"[{callsign}] FC received: msg_type={msg_type}, msg_id={msg_id}, size1={size1}, size2={size2}, status_flag={status_flag}")
-                        state_vars['msg_type'] = msg_type
-                        state_vars['msg_id'] = msg_id
-                        state_vars['size1'] = int(size1)
-                        state_vars['size2'] = int(size2)
-                        state_vars['status_flag'] = int(status_flag)
-                    else:
-                        print(f"[{callsign}] FC line malformed or incomplete: {line}")
-                    writer.write(b"FS Y\r")
-                    await writer.drain()
-                    state = "WAIT_FOR_MESSAGE"
-                else:
-                    writer.write(b";NAK: Expected proposal or FC line\r")
-                    await writer.drain()
+                    continue
+                parts = line.split()
+                serial_number = parts[1] if len(parts) > 1 else None
+                print(f"[{callsign}] F> received with serial: {serial_number}")
+                writer.write(b"FS Y\r")
+                await writer.drain()
+                state = "READY_TO_RECEIVE"
 
-            elif state == "WAIT_FOR_MESSAGE":
-                if line == "F>":
-                    print(f"[{callsign}] Ready for message upload")
-                    writer.write(b";OK: Ready to receive message\r")
+            elif line.startswith(";PR:"):
+                if state != "READY_TO_RECEIVE" or expected_bytes is None:
+                    writer.write(b";NAK: PR unexpected or FC missing\r")
                     await writer.drain()
-                    msg_lines = []
-                    while True:
-                        raw = await reader.readuntil(b"\r")
-                        if raw == b"\xFF\r":
-                            print(f"[{callsign}] End of message received")
-                            break
-                        msg_line = raw.decode("utf-8", errors="ignore").rstrip('\r\n')
-                        msg_lines.append(msg_line)
-                    save_message(callsign, msg_lines)
-                    writer.write(b";OK: Message received\r")
-                    await writer.drain()
-                    # Return to command wait after message upload
-                    writer.write(b"CMS>\r")
-                    await writer.drain()
-                    state = "WAIT_FOR_COMMAND"
-                else:
-                    writer.write(b";NAK: Expected F> to start message upload\r")
-                    await writer.drain()
+                    continue
+                writer.write(b";OK: Ready to receive message\r")
+                await writer.drain()
+
+                msg_bytes = b""
+                while len(msg_bytes) < expected_bytes:
+                    chunk = await reader.read(expected_bytes - len(msg_bytes))
+                    if not chunk:
+                        break
+                    msg_bytes += chunk
+
+                msg_lines = msg_bytes.decode("utf-8", errors="ignore").split("\r\n")
+                msg_lines = [line for line in msg_lines if line.strip()]
+                save_message(callsign, msg_lines)
+                writer.write(b";OK: Message received\r")
+                await writer.drain()
+                state = "COMMAND"
+
+            elif line == "FF":
+                print(f"[{callsign}] Received unexpected FF")
+                continue
+
+            elif line.upper() == "EXIT":
+                print(f"[{callsign}] Session terminated by client")
+                break
+
+            else:
+                writer.write(b";NAK: Unknown command\r")
+                await writer.drain()
 
         except (asyncio.IncompleteReadError, ConnectionResetError):
             print(f"[{callsign}] Connection closed")
