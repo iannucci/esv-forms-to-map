@@ -91,34 +91,52 @@ async def handle_client(reader, writer):
     writer.write(b"CMS>\r")
     await writer.drain()
 
-    while True:
-        try:
+    proposals = []
+    state = "WAIT_FOR_PR"
+
+    try:
+        while True:
             line = (await reader.readuntil(b"\r")).decode("utf-8", errors="ignore").strip()
             print(f"[{callsign}] Received: {line}")
 
-            if line.startswith(";PR:"):
-                writer.write(b";OK: Ready to receive message\r")
-                await writer.drain()
+            if state == "WAIT_FOR_PR":
+                if line.startswith(";PR:"):
+                    proposals.append(line)
+                elif line == "FC":
+                    print(f"[{callsign}] Proposal finalized with FC")
+                    state = "WAIT_FOR_FGT"
+                else:
+                    writer.write(b";NAK: Expected proposals or FC\r")
+                    await writer.drain()
 
-                msg_lines = []
-                while True:
-                    raw = await reader.readuntil(b"\r")
-                    if raw == b"\xFF\r":
-                        break
-                    line = raw.decode("utf-8", errors="ignore").strip()
+            elif state == "WAIT_FOR_FGT":
+                if line == "F>":
+                    print(f"[{callsign}] Received F>, sending FS Y")
+                    writer.write(b"FS Y\r")
+                    await writer.drain()
+                    state = "RECEIVE_MESSAGE"
+                    msg_lines = []
+                else:
+                    writer.write(b";NAK: Expected F> to proceed\r")
+                    await writer.drain()
+
+            elif state == "RECEIVE_MESSAGE":
+                if line == "FF":
+                    print(f"[{callsign}] End of message received")
+                    save_message(callsign, msg_lines)
+                    writer.write(b";OK: Message received\r")
+                    await writer.drain()
+                    state = "WAIT_FOR_FQ"
+                else:
                     msg_lines.append(line)
 
-                save_message(callsign, msg_lines)
-                writer.write(b";OK: Message received\r")
-                await writer.drain()
-
-            elif line == "FF":
-                print(f"[{callsign}] Received unexpected FF")
-                continue
-
-            elif line == "F>":
-                print(f"[{callsign}] Ignored client prompt F>")
-                continue
+            elif state == "WAIT_FOR_FQ":
+                if line == "FQ":
+                    print(f"[{callsign}] Session end FQ received")
+                    break
+                else:
+                    writer.write(b";NAK: Expected FQ to close session\r")
+                    await writer.drain()
 
             elif line.upper() == "EXIT":
                 print(f"[{callsign}] Session terminated by client")
@@ -128,9 +146,8 @@ async def handle_client(reader, writer):
                 writer.write(b";NAK: Unknown command\r")
                 await writer.drain()
 
-        except (asyncio.IncompleteReadError, ConnectionResetError):
-            print(f"[{callsign}] Connection closed")
-            break
+    except (asyncio.IncompleteReadError, ConnectionResetError):
+        print(f"[{callsign}] Connection closed")
 
     writer.close()
     await writer.wait_closed()
