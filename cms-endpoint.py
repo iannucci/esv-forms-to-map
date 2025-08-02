@@ -140,11 +140,22 @@ async def handle_client(reader, writer):
                 await writer.drain()
 
                 msg_bytes = b""
-                while len(msg_bytes) < expected_bytes:
-                    chunk = await reader.read(expected_bytes - len(msg_bytes))
+                remaining = expected_bytes
+                while remaining > 0:
+                    chunk = await reader.read(remaining)
                     if not chunk:
+                        print(f"[{callsign}] Warning: Client closed connection before all bytes were received.")
                         break
                     msg_bytes += chunk
+                    remaining -= len(chunk)
+
+                actual_len = len(msg_bytes)
+                print(f"[{callsign}] Received {actual_len} bytes of {expected_bytes} expected")
+
+                if actual_len != expected_bytes:
+                    writer.write(f";NAK: Message truncated, got {actual_len} of {expected_bytes}\r".encode("utf-8"))
+                    await writer.drain()
+                    continue
 
                 msg_lines = msg_bytes.decode("utf-8", errors="ignore").split("\r\n")
                 msg_lines = [line for line in msg_lines if line.strip()]
