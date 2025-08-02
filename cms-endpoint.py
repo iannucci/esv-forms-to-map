@@ -170,8 +170,7 @@ async def handle_client(reader, writer):
                 print(f"[{callsign}] Received {actual_len} bytes of {current_proposal['size1']} expected")
 
                 if actual_len != current_proposal["size1"]:
-                    writer.write(f";NAK: Message truncated, got {actual_len} of {current_proposal['size1']}
-".encode("utf-8"))
+                    writer.write(f";NAK: Message truncated, got {actual_len} of {current_proposal['size1']}\n".encode("utf-8"))
                     await writer.drain()
                     continue
 
