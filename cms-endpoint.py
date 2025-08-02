@@ -154,7 +154,7 @@ async def handle_client(reader, writer):
                     writer.write(b";OK: Message received\r")
                     await writer.drain()
                     proposal_queue.pop(0)  # Only now remove
-                    state = "COMMAND"
+                    state = "WAIT_FOR_PROPOSAL" if proposal_queue else "COMMAND"
                 else:
                     writer.write(b";NAK: Empty message\r")
                     await writer.drain()
