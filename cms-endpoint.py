@@ -43,8 +43,7 @@ def decode_b2f(lines):
         try:
             compressed_data = base64.b64decode("".join(body_lines))
             decompressed = zlib.decompress(compressed_data).decode("utf-8", errors="replace")
-            body_lines = decompressed.split("
-")
+            body_lines = decompressed.split("\n")
         except Exception as e:
             body_lines = [f"[ERROR decompressing message: {e}]"]
             print(f"[DECODE] Error: {e}")
