@@ -64,7 +64,7 @@ def save_message(callsign, msg_lines, proposal):
     # Optional validation: compare decoded line count to size2 (expected decoded size in bytes)
     decoded_bytes = sum(len(line.encode("utf-8")) + 1 for line in body)  # +1 for newline
     if proposal.get("size2") and decoded_bytes < proposal["size2"]:
-        print(f"[{callsign}] Warning: decoded message size {decoded_bytes} bytes is less than size2={current_proposal['size2']}")
+        print(f"[{callsign}] Warning: decoded message size {decoded_bytes} bytes is less than size2={proposal['size2']}")
     decoded_filename = os.path.join(MAILBOX_DIR, f"{callsign}_{timestamp}.txt")
     with open(decoded_filename, "w", encoding="utf-8") as f:
         for line in body:
