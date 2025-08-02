@@ -176,6 +176,9 @@ async def handle_client(reader, writer):
             elif line.startswith(";") and not line.startswith(";NAK"):
                 print(f"[{callsign}] Info line: {line}")
                 continue
+            elif line.startswith("["):
+                print(f"[{callsign}] Header comment line: {line}")
+                continue
             else:
                 print(f"[{callsign}] Unknown command: {line}")
                 writer.write(f";NAK: Unknown command '{line}'\r".encode("utf-8"))
