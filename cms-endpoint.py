@@ -52,7 +52,7 @@ def decode_b2f(lines):
 
     return headers, body_lines
 
-def save_message(callsign, msg_lines):
+def save_message(callsign, msg_lines, proposal):
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     raw_filename = os.path.join(MAILBOX_DIR, f"{callsign}_{timestamp}.b2f")
     with open(raw_filename, "w", encoding="utf-8") as f:
@@ -63,7 +63,7 @@ def save_message(callsign, msg_lines):
     
     # Optional validation: compare decoded line count to size2 (expected decoded size in bytes)
     decoded_bytes = sum(len(line.encode("utf-8")) + 1 for line in body)  # +1 for newline
-    if current_proposal.get("size2") and decoded_bytes < current_proposal["size2"]:
+    if proposal.get("size2") and decoded_bytes < proposal["size2"]:
         print(f"[{callsign}] Warning: decoded message size {decoded_bytes} bytes is less than size2={current_proposal['size2']}")
     decoded_filename = os.path.join(MAILBOX_DIR, f"{callsign}_{timestamp}.txt")
     with open(decoded_filename, "w", encoding="utf-8") as f:
@@ -181,7 +181,7 @@ async def handle_client(reader, writer):
                 msg_lines = [line for line in msg_lines if line.strip()]
 
                 if msg_lines:
-                    save_message(callsign, msg_lines)
+                    save_message(callsign, msg_lines, current_proposal)
                     writer.write(b";OK: Message received\r")
                     await writer.drain()
                     proposal_queue.pop(0)  # Only now remove
