@@ -148,18 +148,21 @@ async def handle_client(reader, writer):
                 msg_bytes = b""
                 remaining = expected_bytes
                 try:
-                    while remaining > 0:
-                        chunk = await asyncio.wait_for(reader.read(remaining), timeout=10.0)
-                        if not chunk:
-                            print(f"[{callsign}] Warning: Client closed connection before all bytes were received.")
+                    while len(msg_bytes) < current_proposal["size1"]:
+                        try:
+                            chunk = await asyncio.wait_for(reader.read(current_proposal["size1"] - len(msg_bytes)), timeout=10.0)
+                            if not chunk:
+                                print(f"[{callsign}] Warning: Client closed connection early.")
+                                break
+                            msg_bytes += chunk
+                        except asyncio.TimeoutError:
+                            print(f"[{callsign}] Error: Timeout while waiting for message bytes")
                             break
-                        msg_bytes += chunk
-                        remaining -= len(chunk)
                 except asyncio.TimeoutError:
                     print(f"[{callsign}] Error: Timeout while waiting for message bytes")
 
                 actual_len = len(msg_bytes)
-                print(f"[{callsign}] Received {actual_len} bytes of {expected_bytes} expected")
+                print(f"[{callsign}] Received {actual_len} bytes of {current_proposal['size1']} expected")
 
                 if actual_len != expected_bytes:
                     writer.write(f";NAK: Message truncated, got {actual_len} of {expected_bytes}\r".encode("utf-8"))
