@@ -35,15 +35,22 @@ def decode_b2f(lines):
         else:
             body_lines.append(line)
 
-    if headers.get("CT") == "B":
-        encoding = headers.get("Encoding", "7bit").lower()
-        if encoding == "base64":
-            try:
-                compressed_data = base64.b64decode("".join(body_lines))
-                decompressed = zlib.decompress(compressed_data).decode("utf-8", errors="replace")
-                body_lines = decompressed.split("\n")
-            except Exception as e:
-                body_lines = [f"[ERROR decompressing message: {e}]"]
+    ct = headers.get("CT", "").upper()
+    encoding = headers.get("Encoding", "7bit").lower()
+    print(f"[DECODE] CT={ct}, Encoding={encoding}, Line Count={len(body_lines)}")
+
+    if ct == "B" and encoding == "base64":
+        try:
+            compressed_data = base64.b64decode("".join(body_lines))
+            decompressed = zlib.decompress(compressed_data).decode("utf-8", errors="replace")
+            body_lines = decompressed.split("
+")
+        except Exception as e:
+            body_lines = [f"[ERROR decompressing message: {e}]"]
+            print(f"[DECODE] Error: {e}")
+    else:
+        print("[DECODE] No decompression performed")
+
     return headers, body_lines
 
 def save_message(callsign, msg_lines):
