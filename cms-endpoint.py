@@ -130,9 +130,11 @@ async def handle_client(reader, writer):
                     writer.write(b";NAK: Unexpected F>\r")
                     await writer.drain()
                     continue
+
                 serial_number = line.split()[1] if len(line.split()) > 1 else None
-                current_proposal = proposal_queue.pop(0)
+                current_proposal = proposal_queue[0]  # Do NOT pop yet
                 expected_bytes = current_proposal["size2"]
+
                 print(f"[{callsign}] F> received, serial={serial_number}, expecting {expected_bytes} bytes")
                 writer.write(b"FS Y\r")
                 await writer.drain()
@@ -146,11 +148,16 @@ async def handle_client(reader, writer):
 
                 msg_lines = msg_bytes.decode("utf-8", errors="ignore").split("\r\n")
                 msg_lines = [line for line in msg_lines if line.strip()]
-                save_message(callsign, msg_lines)
-                writer.write(b";OK: Message received\r")
-                await writer.drain()
 
-                state = "COMMAND"
+                if msg_lines:
+                    save_message(callsign, msg_lines)
+                    writer.write(b";OK: Message received\r")
+                    await writer.drain()
+                    proposal_queue.pop(0)  # Only now remove
+                    state = "COMMAND"
+                else:
+                    writer.write(b";NAK: Empty message\r")
+                    await writer.drain()
 
             elif line == "FF":
                 print(f"[{callsign}] Received FF (end of message batch)")
