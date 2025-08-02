@@ -161,7 +161,9 @@ async def handle_client(reader, writer):
 
             elif line == "FF":
                 print(f"[{callsign}] Received FF (end of message batch)")
-                continue
+                writer.write(b"FQ\r")
+                await writer.drain()
+                break
 
             elif line.upper() == "EXIT":
                 print(f"[{callsign}] Session terminated by client")
