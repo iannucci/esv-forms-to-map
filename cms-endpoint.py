@@ -100,10 +100,8 @@ async def handle_client(reader, writer):
         return
 
     print(f"[LOGIN] Successful login for {callsign}")
-    writer.write(b"WL-AREDN Bridge Rel 1.0\r")
+    writer.write(b"[WL-AREDN Bridge Rel 1.0]\r")
     writer.write(b";PQ: 00000001\r")
-    writer.write(b";IS:\r")
-    writer.write(b";\r")
     writer.write(b"CMS>\r")
     await writer.drain()
 
