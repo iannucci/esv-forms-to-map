@@ -60,6 +60,11 @@ def save_message(callsign, msg_lines):
             f.write(line + "\r\n")
 
     headers, body = decode_b2f(msg_lines)
+    
+    # Optional validation: compare decoded line count to size2 (expected decoded size in bytes)
+    decoded_bytes = sum(len(line.encode("utf-8")) + 1 for line in body)  # +1 for newline
+    if current_proposal.get("size2") and decoded_bytes < current_proposal["size2"]:
+        print(f"[{callsign}] Warning: decoded message size {decoded_bytes} bytes is less than size2={current_proposal['size2']}")
     decoded_filename = os.path.join(MAILBOX_DIR, f"{callsign}_{timestamp}.txt")
     with open(decoded_filename, "w", encoding="utf-8") as f:
         for line in body:
@@ -139,7 +144,7 @@ async def handle_client(reader, writer):
 
                 serial_number = line.split()[1] if len(line.split()) > 1 else None
                 current_proposal = proposal_queue[0]  # Do NOT pop yet
-                expected_bytes = current_proposal["size2"]
+                expected_bytes = current_proposal["size1"]
 
                 print(f"[{callsign}] F> received, serial={serial_number}, expecting {expected_bytes} bytes")
                 writer.write(b"FS Y\r")
@@ -164,8 +169,9 @@ async def handle_client(reader, writer):
                 actual_len = len(msg_bytes)
                 print(f"[{callsign}] Received {actual_len} bytes of {current_proposal['size1']} expected")
 
-                if actual_len != expected_bytes:
-                    writer.write(f";NAK: Message truncated, got {actual_len} of {expected_bytes}\r".encode("utf-8"))
+                if actual_len != current_proposal["size1"]:
+                    writer.write(f";NAK: Message truncated, got {actual_len} of {current_proposal['size1']}
+".encode("utf-8"))
                     await writer.drain()
                     continue
 
