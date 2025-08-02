@@ -4,6 +4,7 @@ import os
 import base64
 import zlib
 from datetime import datetime, timezone
+import re
 
 MAILBOX_DIR = "mailbox"
 USERS_FILE = "users.json"
@@ -100,7 +101,9 @@ async def handle_client(reader, writer):
         return
 
     print(f"[LOGIN] Successful login for {callsign}")
-    writer.write(b"[WL-AREDN Bridge Rel 1.0]\r")
+    bytes_header = b"[WL-AREDN Bridge Rel 1.0]\r"
+    escaped_header = re.escape(bytes_header)
+    writer.write(escaped_header)
     writer.write(b";PQ: 00000001\r")
     writer.write(b"CMS>\r")
     await writer.drain()
