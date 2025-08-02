@@ -182,8 +182,7 @@ async def handle_client(reader, writer):
 
                 if msg_lines:
                     save_message(callsign, msg_lines, current_proposal)
-                    writer.write(b"CMS>
-")
+                    writer.write(b"CMS>\r")
                     await writer.drain()
                     proposal_queue.pop(0)  # Only now remove
                     state = "WAIT_FOR_PROPOSAL" if proposal_queue else "COMMAND"
