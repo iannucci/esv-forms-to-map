@@ -153,9 +153,9 @@ async def handle_client(reader, writer):
                 msg_bytes = b""
                 remaining = expected_bytes
                 try:
-                    while len(msg_bytes) < current_proposal["size1"]:
+                    while True:
                         try:
-                            chunk = await asyncio.wait_for(reader.read(current_proposal["size1"] - len(msg_bytes)), timeout=10.0)
+                            chunk = await asyncio.wait_for(reader.read(current_proposal["size1"] - len(msg_bytes)), timeout=1.0)
                             if not chunk:
                                 print(f"[{callsign}] Warning: Client closed connection early.")
                                 break
@@ -174,10 +174,8 @@ async def handle_client(reader, writer):
                 print(f"[{callsign}] HEX: {hex_dump}")
                 print(f"[{callsign}] ASCII: {ascii_dump}")
 
-                if actual_len != current_proposal["size1"]:
-                    writer.write(f";NAK: Message truncated, got {actual_len} of {current_proposal['size1']}\r".encode("utf-8"))
-                    await writer.drain()
-                    continue
+                if actual_len < current_proposal["size1"]:
+                    print(f"[{callsign}] Warning: message was truncated (got {actual_len} of {current_proposal['size1']}) — accepting anyway")
 
                 msg_lines = msg_bytes.decode("utf-8", errors="ignore").split("\r\n")
                 msg_lines = [line for line in msg_lines if line.strip()]
