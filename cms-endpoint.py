@@ -167,6 +167,15 @@ async def handle_client(reader, writer):
                 print(f"[{callsign}] Session terminated by client")
                 break
 
+            elif line.startswith(";FW:"):
+                print(f"[{callsign}] FW line accepted: {line}")
+                continue
+            elif line.startswith(";PR:"):
+                print(f"[{callsign}] PR line received: {line}")
+                continue
+            elif line.startswith(";") and not line.startswith(";NAK"):
+                print(f"[{callsign}] Info line: {line}")
+                continue
             else:
                 print(f"[{callsign}] Unknown command: {line}")
                 writer.write(f";NAK: Unknown command '{line}'\r".encode("utf-8"))
