@@ -101,9 +101,7 @@ async def handle_client(reader, writer):
         return
 
     print(f"[LOGIN] Successful login for {callsign}")
-    bytes_header = b"[WL-AREDN Bridge Rel 1.0]\r"
-    escaped_header = re.escape(bytes_header)
-    writer.write(escaped_header)
+    writer.write(b"WL-AREDN Bridge Rel 1.0\r")
     writer.write(b";PQ: 00000001\r")
     writer.write(b"CMS>\r")
     await writer.drain()
