@@ -168,6 +168,11 @@ async def handle_client(reader, writer):
 
                 actual_len = len(msg_bytes)
                 print(f"[{callsign}] Received {actual_len} bytes of {current_proposal['size1']} expected")
+                # Debug: show raw bytes as hex and ASCII
+                hex_dump = ' '.join(f"{b:02X}" for b in msg_bytes)
+                ascii_dump = ''.join(chr(b) if 32 <= b <= 126 else '.' for b in msg_bytes)
+                print(f"[{callsign}] HEX: {hex_dump}")
+                print(f"[{callsign}] ASCII: {ascii_dump}")
 
                 if actual_len != current_proposal["size1"]:
                     writer.write(f";NAK: Message truncated, got {actual_len} of {current_proposal['size1']}\r".encode("utf-8"))
