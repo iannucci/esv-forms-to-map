@@ -168,7 +168,8 @@ async def handle_client(reader, writer):
                 break
 
             else:
-                writer.write(b";NAK: Unknown command\r")
+                print(f"[{callsign}] Unknown command: {line}")
+                writer.write(f";NAK: Unknown command '{line}'\r".encode("utf-8"))
                 await writer.drain()
 
         except (asyncio.IncompleteReadError, ConnectionResetError):
