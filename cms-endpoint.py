@@ -1,236 +1,214 @@
-import asyncio
-import json
-import os
-import base64
+import socket
+import threading
+import logging
+import time
+import queue
 import zlib
-from datetime import datetime, timezone
-import re
 
-MAILBOX_DIR = "mailbox"
-USERS_FILE = "users.json"
-PORT = 8772
-HOST = "0.0.0.0"
+# State definitions for the state machine
+START = 0
+CONNECTED = 1  # Renamed from AWAIT_CONNECTION
+CALLSIGN_ENTRY = 2
+PASSWORD_VALIDATION = 3
+LOGIN_SUCCESS = 4
+CLIENT_REQUEST = 5  # New state added after LOGIN_SUCCESS
+MESSAGE_UPLOAD = 6
+CLOSE_CONNECTION = 7  # State where connection will be closed
 
-# Load users from JSON file
-if os.path.exists(USERS_FILE):
-    with open(USERS_FILE, "r") as f:
-        USERS = json.load(f)
-else:
-    USERS = {}
+class MessageOffer:
+    """Class to represent an incoming message offer."""
+    pass
 
-os.makedirs(MAILBOX_DIR, exist_ok=True)
+class ConnectionHandler:
+    def __init__(self, connection, address, timeout=5, enable_debug=False):
+        """Initialize the connection handler and encapsulate socket handling."""
+        self.connection = connection
+        self.address = address
+        self.timeout = timeout  # Unified timeout value for all operations
+        self.enable_debug = enable_debug
+        self.client_callsign = None
+        self.client_password = None  # Save password as an instance variable
+        self.state = START  # Starting state
+        self.next_state = START  # Next state to transition to
+        
+        # Set up logging
+        self.logger = logging.getLogger(__name__)
+        self._setup_logging()
 
-def decode_b2f(lines):
-    headers = {}
-    body_lines = []
-    in_headers = True
+    def _setup_logging(self):
+        """Set up logging configuration."""
+        log_level = logging.DEBUG if self.enable_debug else logging.INFO
+        logging.basicConfig(level=log_level,
+                            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        
+    def _log_debug(self, message):
+        """Log debug messages if debugging is enabled."""
+        if self.enable_debug:
+            self.logger.debug(message)
 
-    for line in lines:
-        if in_headers:
-            if line == "":
-                in_headers = False
-                continue
-            if ":" in line:
-                key, value = line.split(":", 1)
-                headers[key.strip()] = value.strip()
-        else:
-            body_lines.append(line)
+    def _log_state_change(self, new_state):
+        """Log the state change."""
+        self._log_debug(f"State changed from {self.state} to {new_state}")
+        self.state = new_state  # Update the current state
 
-    ct = headers.get("CT", "").upper()
-    encoding = headers.get("Encoding", "7bit").lower()
-    print(f"[DECODE] CT={ct}, Encoding={encoding}, Line Count={len(body_lines)}")
-
-    if ct == "B" and encoding == "base64":
+    def handle_connection(self):
+        """Main loop to handle connection and state transitions."""
         try:
-            compressed_data = base64.b64decode("".join(body_lines))
-            decompressed = zlib.decompress(compressed_data).decode("utf-8", errors="replace")
-            body_lines = decompressed.split("\n")
+            while self.state != CLOSE_CONNECTION:  # Continue processing until CLOSE_CONNECTION state is reached
+                if self.state == START:
+                    self._handle_start()
+                elif self.state == CONNECTED:
+                    self._handle_connected()
+                elif self.state == CALLSIGN_ENTRY:
+                    self._handle_callsign_entry()
+                elif self.state == PASSWORD_VALIDATION:
+                    self._handle_password_validation()
+                elif self.state == LOGIN_SUCCESS:
+                    self._handle_login_success()
+                elif self.state == CLIENT_REQUEST:
+                    self._handle_client_request()
+                elif self.state == MESSAGE_UPLOAD:
+                    self._handle_message_upload()
+                else:
+                    self._log_debug("Unknown state")
+                    break
+
+                # Set the state to the next state after the method finishes
+                self._log_state_change(self.next_state)
         except Exception as e:
-            body_lines = [f"[ERROR decompressing message: {e}]"]
-            print(f"[DECODE] Error: {e}")
-    else:
-        print("[DECODE] No decompression performed")
+            self.logger.error(f"Error during connection handling: {e}")
+        finally:
+            self._close_connection()
 
-    return headers, body_lines
-
-def save_message(callsign, msg_lines, proposal):
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    raw_filename = os.path.join(MAILBOX_DIR, f"{callsign}_{timestamp}.b2f")
-    with open(raw_filename, "w", encoding="utf-8") as f:
-        for line in msg_lines:
-            f.write(line + "\r\n")
-
-    headers, body = decode_b2f(msg_lines)
-    
-    # Optional validation: compare decoded line count to size2 (expected decoded size in bytes)
-    decoded_bytes = sum(len(line.encode("utf-8")) + 1 for line in body)  # +1 for newline
-    if proposal.get("size2") and decoded_bytes < proposal["size2"]:
-        print(f"[{callsign}] Warning: decoded message size {decoded_bytes} bytes is less than size2={proposal['size2']}")
-    decoded_filename = os.path.join(MAILBOX_DIR, f"{callsign}_{timestamp}.txt")
-    with open(decoded_filename, "w", encoding="utf-8") as f:
-        for line in body:
-            f.write(line + "\n")
-
-    print(f"[MAIL] Saved message for {callsign} to {raw_filename} and decoded to {decoded_filename}")
-    print(f"[HEADERS] {json.dumps(headers, indent=2)}")
-
-async def handle_client(reader, writer):
-    addr = writer.get_extra_info("peername")
-    print(f"[CONNECT] Client connected: {addr}")
-
-    writer.write(b"Callsign :\r")
-    await writer.drain()
-    callsign = (await reader.readuntil(b"\r")).decode("utf-8", errors="ignore").strip().upper()
-    print(f"[LOGIN] Callsign received: {callsign}")
-
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    writer.write(f";FW:{timestamp}\r".encode("utf-8"))
-    await writer.drain()
-
-    writer.write(b"Password :\r")
-    await writer.drain()
-    password = (await reader.readuntil(b"\r")).decode("utf-8", errors="ignore").strip()
-    print(f"[LOGIN] Password received")
-
-    stored_password = USERS.get(callsign)
-    if stored_password is None or stored_password != password:
-        writer.write(b";NAK\r\n")
-        await writer.drain()
-        print(f"[LOGIN] Invalid password for {callsign}")
-        writer.close()
-        return
-
-    print(f"[LOGIN] Successful login for {callsign}")
-    writer.write(b"WL-AREDN Bridge Rel 1.0\r")
-    writer.write(b";PQ: 00000001\r")
-    writer.write(b"CMS>\r")
-    await writer.drain()
-
-    state = "COMMAND"
-    proposal_queue = []
-    expected_bytes = None
-
-    while True:
+    def send_data(self, data):
+        """Send data back to the client."""
         try:
-            line = (await reader.readuntil(b"\r")).decode("utf-8", errors="ignore").strip()
-            print(f"[{callsign}] Received: {line}")
+            if self.connection:
+                self.connection.sendall(data.encode())
+                self._log_debug(f"Sent data: {data}")
+        except Exception as e:
+            self.logger.error(f"Error sending data: {e}")
 
-            if line.startswith("FC"):
-                if state not in ["COMMAND", "WAIT_FOR_PROPOSAL"]:
-                    writer.write(b";NAK: Unexpected FC\r")
-                    await writer.drain()
-                    continue
-                parts = line.split()
-                if len(parts) >= 6:
-                    _, msg_type, msg_id, size1, size2, status_flag = parts[:6]
-                    proposal_queue.append({
-                        "msg_type": msg_type,
-                        "msg_id": msg_id,
-                        "size1": int(size1),
-                        "size2": int(size2),
-                        "status_flag": status_flag
-                    })
-                    state = "WAIT_FOR_PROPOSAL"
-                else:
-                    writer.write(b";NAK: Malformed FC\r")
-                    await writer.drain()
+    def wait_for_input(self, prompt):
+        """Send prompt and wait for client response within timeout."""
+        self.send_data(prompt)
+        try:
+            self.connection.settimeout(self.timeout)  # Use the same timeout for callsign entry
+            response = self.connection.recv(1024).decode().strip()  # Receive client input
+            return response
+        except socket.timeout:
+            self._log_debug(f"Timeout occurred while waiting for input.")
+            return None
 
-            elif line.startswith("F>"):
-                if state != "WAIT_FOR_PROPOSAL" or not proposal_queue:
-                    writer.write(b";NAK: Unexpected F>\r")
-                    await writer.drain()
-                    continue
+    def _handle_start(self):
+        """Handle the start state."""
+        self._log_debug("Handling START state")
+        self.state = CONNECTED  # Move to CONNECTED when starting the connection
+        self.next_state = CONNECTED
 
-                serial_number = line.split()[1] if len(line.split()) > 1 else None
-                current_proposal = proposal_queue[0]  # Do NOT pop yet
-                expected_bytes = current_proposal["size1"]
+    def _handle_connected(self):
+        """Handle the connected state."""
+        self._log_debug("Handling CONNECTED state")
+        # The connection is already established, so move to CALLSIGN_ENTRY
+        self.next_state = CALLSIGN_ENTRY
 
-                print(f"[{callsign}] F> received, serial={serial_number}, expecting {expected_bytes} bytes")
-                writer.write(b"FS Y\r")
-                await writer.drain()
+    def _handle_callsign_entry(self):
+        """Process the callsign."""
+        self._log_debug("Handling CALLSIGN_ENTRY state")
+        callsign = self.wait_for_input("Callsign :\r")  # Wait for client input
 
-                msg_bytes = b""
-                remaining = expected_bytes
-                try:
-                    while True:
-                        try:
-                            chunk = await asyncio.wait_for(reader.read(current_proposal["size1"] - len(msg_bytes)), timeout=1.0)
-                            if not chunk:
-                                print(f"[{callsign}] Warning: Client closed connection early.")
-                                break
-                            msg_bytes += chunk
-                        except asyncio.TimeoutError:
-                            print(f"[{callsign}] Error: Timeout while waiting for message bytes")
-                            break
-                except asyncio.TimeoutError:
-                    print(f"[{callsign}] Error: Timeout while waiting for message bytes")
+        if callsign:
+            print(f"Server: Received callsign: {callsign}")
+            self.client_callsign = callsign  # Save the callsign
+            self.next_state = PASSWORD_VALIDATION  # Move to PASSWORD_VALIDATION state
+        else:
+            print("Server: No valid callsign received. Closing connection.")
+            self._close_connection()  # Close the connection if no valid callsign
+            self.next_state = START  # Return to the START state
 
-                actual_len = len(msg_bytes)
-                print(f"[{callsign}] Received {actual_len} bytes of {current_proposal['size1']} expected")
-                # Debug: show raw bytes as hex and ASCII
-                hex_dump = ' '.join(f"{b:02X}" for b in msg_bytes)
-                ascii_dump = ''.join(chr(b) if 32 <= b <= 126 else '.' for b in msg_bytes)
-                print(f"[{callsign}] HEX: {hex_dump}")
-                print(f"[{callsign}] ASCII: {ascii_dump}")
+    def _handle_password_validation(self):
+        """Process the password."""
+        self._log_debug("Handling PASSWORD_VALIDATION state")
+        # Prompt for password and wait for input
+        password = self.wait_for_input("Password :\r")
+        
+        if password:
+            print(f"Server: Received password: {password}")  # Print the received password
+            self.client_password = password  # Save the password as an instance variable
+            self.next_state = LOGIN_SUCCESS  # Move to LOGIN_SUCCESS state
+        else:
+            print("Server: No valid password received. Closing connection.")
+            self._close_connection()  # Close the connection if no valid password
+            self.next_state = START  # Return to the START state
 
-                if actual_len < current_proposal["size1"]:
-                    print(f"[{callsign}] Warning: message was truncated (got {actual_len} of {current_proposal['size1']}) — accepting anyway")
+    def _handle_login_success(self):
+        """Handle successful login."""
+        self._log_debug("Handling LOGIN_SUCCESS state")
+        
+        # Send '[AREDN_BRIDGE-1.0-B2F$]' followed by a carriage return
+        self.send_data("[AREDN_BRIDGE-1.0-B2F$]\r")
+        
+        # Send 'CMS>' followed by a carriage return
+        self.send_data("CMS>\r")
+        
+        print("Server: Login successful.")
+        self.next_state = CLIENT_REQUEST  # Transition to CLIENT_REQUEST after login success
 
-                msg_lines = msg_bytes.decode("utf-8", errors="ignore").split("\r\n")
-                msg_lines = [line for line in msg_lines if line.strip()]
+    def _handle_client_request(self):
+        """Handle the client's request after login."""
+        self._log_debug("Handling CLIENT_REQUEST state")
+        print("Server: Waiting for client request.")
+        request = self.wait_for_input("")  # Wait for client's request without a custom prompt
 
-                if msg_lines:
-                    save_message(callsign, msg_lines, current_proposal)
-                    writer.write(b"CMS>\r")
-                    await writer.drain()
-                    proposal_queue.pop(0)  # Only now remove
-                    state = "WAIT_FOR_PROPOSAL" if proposal_queue else "COMMAND"
-                else:
-                    writer.write(b";NAK: Empty message\r")
-                    await writer.drain()
+        if request:
+            print(f"Server: Received client request: {request}")
+            # You can add additional processing based on the request if needed
+            self.next_state = MESSAGE_UPLOAD  # Move to the next state after handling the request
+        else:
+            print("Server: No valid request received. Closing connection.")
+            self._close_connection()  # Close the connection if no valid request
+            self.next_state = CLOSE_CONNECTION  # Close the connection
 
-            elif line == "FF":
-                print(f"[{callsign}] Received FF (end of message batch)")
-                writer.write(b"FQ\r")
-                await writer.drain()
-                break
+    def _handle_message_upload(self):
+        """Handle message upload."""
+        self._log_debug("Handling MESSAGE_UPLOAD state")
+        # This would be handled in the connection handler during the message offer
+        print("Server: Waiting for message upload.")
+        self.next_state = CLOSE_CONNECTION  # Move directly to CLOSE_CONNECTION after message upload
 
-            elif line.upper() == "EXIT":
-                print(f"[{callsign}] Session terminated by client")
-                break
+    def _close_connection(self):
+        """Close the connection."""
+        if self.connection:
+            self.logger.info(f"Closing connection to {self.address}")
+            self.connection.close()
 
-            elif line.startswith(";FW:"):
-                print(f"[{callsign}] FW line accepted: {line}")
-                continue
-            elif line.startswith(";PR:"):
-                print(f"[{callsign}] PR line received: {line}")
-                continue
-            elif line.startswith(";") and not line.startswith(";NAK"):
-                print(f"[{callsign}] Info line: {line}")
-                continue
-            elif line.startswith("["):
-                print(f"[{callsign}] Header comment line: {line}")
-                continue
-            else:
-                print(f"[{callsign}] Unknown command: {line}")
-                writer.write(f";NAK: Unknown command '{line}'\r".encode("utf-8"))
-                await writer.drain()
+class TelnetServer:
+    def __init__(self, host, port):
+        self.host = host
+        self.port = port
 
-        except (asyncio.IncompleteReadError, ConnectionResetError):
-            print(f"[{callsign}] Connection closed")
-            break
+    def start_server(self):
+        """Main listening loop that accepts new connections."""
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.bind((self.host, self.port))
+        server_socket.listen(5)  # Allow up to 5 pending connections
+        print(f"Server is listening on {self.host}:{self.port}")
 
-    writer.close()
-    await writer.wait_closed()
-    print(f"[DISCONNECT] Client disconnected: {addr}")
+        try:
+            while True:
+                # Accept a new connection
+                connection, address = server_socket.accept()
+                print(f"Connection established with {address}")
 
-async def main():
-    server = await asyncio.start_server(handle_client, HOST, PORT)
-    addr = server.sockets[0].getsockname()
-    print(f"[START] Server listening on {addr}")
-
-    async with server:
-        await server.serve_forever()
+                # Fork a new thread to handle the connection
+                handler = ConnectionHandler(connection, address, timeout=5, enable_debug=True)
+                threading.Thread(target=handler.handle_connection).start()
+        
+        except KeyboardInterrupt:
+            print("Server interrupted, shutting down...")
+        finally:
+            server_socket.close()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    server = TelnetServer("localhost", 12345)
+    server.start_server()
