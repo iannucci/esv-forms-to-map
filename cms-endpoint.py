@@ -183,7 +183,8 @@ class ConnectionHandler:
             self.connection.close()
 
 class TelnetServer:
-    def __init__(self, host, port):
+    def __init__(self, host="0.0.0.0", port=8772):
+        """Initialize the server with default host and port."""
         self.host = host
         self.port = port
 
@@ -210,5 +211,5 @@ class TelnetServer:
             server_socket.close()
 
 if __name__ == "__main__":
-    server = TelnetServer("localhost", 12345)
+    server = TelnetServer()  # Default to host=0.0.0.0 and port=8772
     server.start_server()
