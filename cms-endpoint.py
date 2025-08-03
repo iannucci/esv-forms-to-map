@@ -5,15 +5,15 @@ import time
 import queue
 import zlib
 
-# State definitions for the state machine
-START = 0
-CONNECTED = 1  # Renamed from AWAIT_CONNECTION
-CALLSIGN_ENTRY = 2
-PASSWORD_VALIDATION = 3
-LOGIN_SUCCESS = 4
-CLIENT_REQUEST = 5  # New state added after LOGIN_SUCCESS
-MESSAGE_UPLOAD = 6
-CLOSE_CONNECTION = 7  # State where connection will be closed
+# State definitions for the state machine as strings
+START = "START"
+CONNECTED = "CONNECTED"
+CALLSIGN_ENTRY = "CALLSIGN_ENTRY"
+PASSWORD_VALIDATION = "PASSWORD_VALIDATION"
+LOGIN_SUCCESS = "LOGIN_SUCCESS"
+CLIENT_REQUEST = "CLIENT_REQUEST"
+MESSAGE_UPLOAD = "MESSAGE_UPLOAD"
+CLOSE_CONNECTION = "CLOSE_CONNECTION"
 
 class MessageOffer:
     """Class to represent an incoming message offer."""
