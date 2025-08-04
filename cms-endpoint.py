@@ -100,20 +100,29 @@ class ConnectionHandler:
             self.logger.error(f"Error sending data: {e}")
 
     def wait_for_input(self, prompt):
-        """Send prompt and wait for client response within timeout."""
+        """Send prompt and wait for client response, terminated by a carriage return."""
         self.send_data(prompt)
         try:
-            self.connection.settimeout(self.timeout)  # Use the same timeout for callsign entry
-            response = self.connection.recv(1024)  # Receive the raw byte data
-            response_str = response.decode().rstrip("\r")  # Decode to string and strip trailing carriage return
-            
-            # Log the response in hexadecimal for debugging
-            self._log_debug(f"Received data (hex): {' '.join([hex(byte) for byte in response])}")
-            self._log_debug(f"Received data (string): {response_str}")
-            
+            self.connection.settimeout(self.timeout)  # Set the timeout for the connection
+            # Read data from the client until a carriage return is encountered
+            response = b""
+            while True:
+                byte = self.connection.recv(1)  # Read one byte at a time
+                if not byte:
+                    break  # If there's no data, stop reading
+                response += byte
+                if byte == b'\r':  # Carriage return indicates the end of the line
+                    break
+        
+            response_str = response.decode()  # Convert bytes to a string
+            response_str = response_str.rstrip("\r")  # Strip the carriage return
+
+            # Debug: Log the received data for inspection
+            self._log_debug(f"Received data: {response_str}")
+
             return response_str
         except socket.timeout:
-            self._log_debug(f"Timeout occurred while waiting for input.")
+            self._log_debug("Timeout occurred while waiting for input.")
             return None
 
     def _handle_start(self):
