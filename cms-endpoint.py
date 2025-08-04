@@ -15,9 +15,15 @@ CLIENT_REQUEST = "CLIENT_REQUEST"
 MESSAGE_UPLOAD = "MESSAGE_UPLOAD"
 CLOSE_CONNECTION = "CLOSE_CONNECTION"
 
-class MessageOffer:
-    """Class to represent an incoming message offer."""
-    pass
+class Message:
+    """Class to represent a message with its metadata."""
+    
+    def __init__(self, message_type=None, message_id=None, uncompressed_size=None, compressed_size=None):
+        """Initialize the message with the necessary instance variables."""
+        self.message_type = message_type  # Type of the message (e.g., proposal, etc.)
+        self.message_id = message_id  # Unique identifier for the message
+        self.uncompressed_size = uncompressed_size  # Uncompressed size of the message
+        self.compressed_size = compressed_size  # Compressed size of the message
 
 class ConnectionHandler:
     def __init__(self, connection, address, timeout=5, enable_debug=False):
@@ -28,8 +34,14 @@ class ConnectionHandler:
         self.enable_debug = enable_debug
         self.client_callsign = None
         self.client_password = None  # Save password as an instance variable
+        self.author = None  # Instance variable for author
+        self.version = None  # Instance variable for version (optional)
+        self.feature_list = None  # Instance variable for feature list
         self.state = START  # Starting state
         self.next_state = START  # Next state to transition to
+        self.forward_login_callsign = None  # Instance variable for forward login callsign
+        self.pickup_callsigns = []  # List to store pickup callsigns as tuples
+        self.message_queue = queue.Queue()  # Initialize a message queue to hold incoming messages
         
         # Set up logging
         self.logger = logging.getLogger(__name__)
@@ -157,17 +169,99 @@ class ConnectionHandler:
     def _handle_client_request(self):
         """Handle the client's request after login."""
         self._log_debug("Handling CLIENT_REQUEST state")
-        print("Server: Waiting for client request.")
         request = self.wait_for_input("")  # Wait for client's request without a custom prompt
 
         if request:
             print(f"Server: Received client request: {request}")
-            # You can add additional processing based on the request if needed
-            self.next_state = MESSAGE_UPLOAD  # Move to the next state after handling the request
+
+            if request.startswith(";FW:"):
+                self._handle_message_proposal(request)  # Call the new method for message proposal handling
+            elif request.startswith("[") and request.endswith("]"):
+                self._parse_sid(request)  # Call _parse_sid for bracketed messages
+            elif request.startswith("; "):
+                self._handle_semicolon_message(request)
+            elif request.startswith("FC"):
+                self._handle_fc_message(request)
+            elif request.startswith("F>"):
+                self._handle_fgreater_message(request)
+            else:
+                print("Server: Unknown request. Closing connection.")
+                self._close_connection()  # Close connection if request type is unrecognized
+                self.next_state = CLOSE_CONNECTION  # Close the connection
+
+            self.next_state = MESSAGE_UPLOAD  # Proceed to message upload
         else:
             print("Server: No valid request received. Closing connection.")
             self._close_connection()  # Close the connection if no valid request
             self.next_state = CLOSE_CONNECTION  # Close the connection
+
+    def _handle_message_proposal(self, message):
+        """Handle messages that begin with ';FW:'."""
+        self._log_debug(f"Handling message proposal: {message}")
+        
+        # Split the message into parts based on spaces
+        parts = message.split()
+        
+        # Ensure there are at least 4 parts
+        if len(parts) >= 4:
+            # Extract the four parameters
+            message_type = parts[0]
+            message_id = parts[1]
+            uncompressed_size = int(parts[2])
+            compressed_size = int(parts[3])
+
+            # Create a new Message instance with the extracted data
+            message_instance = Message(message_type, message_id, uncompressed_size, compressed_size)
+
+            # Push the new message into the message queue
+            self.message_queue.put(message_instance)
+            
+            print(f"Server: Message proposal handled: {message_instance.message_type}, ID: {message_instance.message_id}, Uncompressed Size: {message_instance.uncompressed_size}, Compressed Size: {message_instance.compressed_size}")
+        else:
+            print("Server: Invalid message proposal format. Closing connection.")
+            self._close_connection()  # Close the connection if format is incorrect
+            self.next_state = CLOSE_CONNECTION  # Close the connection
+
+    def _parse_sid(self, message):
+        """Parse the message that starts with '[' and ends with ']'. Extract author, version, and feature list."""
+        self._log_debug(f"Handling SID message: {message}")
+        
+        # Remove the brackets and split by '-'
+        content = message[1:-1]  # Strip the surrounding brackets
+        parts = content.split('-')
+        
+        if len(parts) >= 2:  # We expect at least author and feature list
+            self.author = parts[0]  # First parameter is the author
+            self.version = parts[1] if len(parts) > 2 else None  # Optional: Second parameter is the version (or None if missing)
+            self.feature_list = parts[2] if len(parts) > 2 else parts[1]  # Third parameter is the feature list, or version if no third part
+
+            # Log the extracted parameters for debugging
+            self._log_debug(f"Author: {self.author}, Version: {self.version}, Feature List: {self.feature_list}")
+        else:
+            print("Server: Invalid SID format. Closing connection.")
+            self._close_connection()  # Close the connection if format is incorrect
+            self.next_state = CLOSE_CONNECTION  # Close the connection
+
+    def _handle_semicolon_message(self, message):
+        """Handle messages that begin with '; '."""
+        self._log_debug(f"Handling semicolon message: {message}")
+        # Implement the specific handling for the '; ' message
+        print(f"Server: Handling semicolon message: {message}")
+        # Further processing can be added here
+
+    def _handle_fc_message(self, message):
+        """Handle messages that begin with 'FC'."""
+        self._log_debug(f"Handling FC message: {message}")
+        # Implement the specific handling for the 'FC' message
+        print(f"Server: Handling FC message: {message}")
+        # Further processing can be added here
+
+    def _handle_fgreater_message(self, message):
+        """Handle messages that begin with 'F>'."""
+        self._log_debug(f"Handling F> message: {message}")
+        # Implement the specific handling for the 'F>' message
+        print(f"Server: Handling F> message: {message}")
+        # Further processing can be added here
 
     def _handle_message_upload(self):
         """Handle message upload."""
