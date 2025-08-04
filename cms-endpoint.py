@@ -219,8 +219,25 @@ class ConnectionHandler:
     def _handle_message_proposal(self, message):
         """Handle messages that begin with 'FC'."""
         self._log_debug(f"Handling message proposal: {message}")
-        # Implementation for handling message proposal
-        # (Extract message metadata and queue it)
+        
+        # Extracting message type, message ID, uncompressed size, and compressed size
+        parts = message.split()
+        if len(parts) >= 5:
+            message_type = parts[1]
+            message_id = parts[2]
+            uncompressed_size = int(parts[3])
+            compressed_size = int(parts[4])
+
+            # Create a new Message instance with the extracted data
+            new_message = Message(message_type, message_id, uncompressed_size, compressed_size)
+
+            # Push the new message into the message queue for later processing
+            self.message_queue.put(new_message)
+            self._log_debug(f"Message added to queue: {new_message.message_id} (Type: {new_message.message_type})")
+        
+        else:
+            # Handle invalid message format
+            self._log_debug("Invalid message proposal format")
 
     def _handle_end_of_proposal(self, message):
         """Handle messages that begin with 'F>'."""
@@ -233,7 +250,7 @@ class ConnectionHandler:
                 self._log_debug(f"Processing message ID: {message_instance.message_id}")
                 
                 # Await up to uncompressed_size bytes of data from the client
-                self.send_data("Waiting for message data...\r")  # Optional prompt
+                self.send_data("FS Y\r")  # Now send "FS Y\r" to prompt the client for message data
                 data = self._wait_for_data(message_instance.uncompressed_size)
                 
                 # Store the raw data in the message instance
