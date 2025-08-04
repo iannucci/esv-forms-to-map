@@ -188,10 +188,10 @@ class ConnectionHandler:
         if request:
             print(f"Server: Received client request: {request}")
 
-            if request.startswith(";FW:"):
-                self._handle_forward_message(request)  # Call _handle_forward_message for FW messages
-            elif request.startswith(";FC:"):
+            if request.startswith("FC"):  # Now handle 'FC' instead of ';FC:'
                 self._handle_message_proposal(request)  # Call _handle_message_proposal for FC messages
+            elif request.startswith(";FW:"):
+                self._handle_forward_message(request)  # Call _handle_forward_message for FW messages
             elif request.startswith(";PQ:"):
                 self._handle_authentication_challenge(request)  # Call _handle_authentication_challenge for PQ messages
             elif request.startswith(";PM:"):
@@ -230,7 +230,7 @@ class ConnectionHandler:
         # (Extract forward_login_callsign, pickup_callsigns, etc.)
 
     def _handle_message_proposal(self, message):
-        """Handle messages that begin with ';FC:'."""
+        """Handle messages that begin with 'FC'."""
         self._log_debug(f"Handling message proposal: {message}")
         # Implementation for handling message proposal
         # (Extract message metadata and queue it)
