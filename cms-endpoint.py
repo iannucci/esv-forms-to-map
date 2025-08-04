@@ -144,11 +144,10 @@ class ConnectionHandler:
         callsign = self.wait_for_input("Callsign :\r")  # Wait for client input
 
         if callsign:
-            print(f"Server: Received callsign: {callsign}")
             self.client_callsign = callsign  # Save the callsign
             self.next_state = PASSWORD_VALIDATION  # Move to PASSWORD_VALIDATION state
         else:
-            print("Server: No valid callsign received. Closing connection.")
+            print(f"Server: No valid callsign received. Closing connection to {self.address}")
             self._close_connection()  # Close the connection if no valid callsign
             self.next_state = START  # Return to the START state
 
@@ -159,11 +158,10 @@ class ConnectionHandler:
         password = self.wait_for_input("Password :\r")
         
         if password:
-            print(f"Server: Received password: {password}")  # Print the received password
             self.client_password = password  # Save the password as an instance variable
             self.next_state = LOGIN_SUCCESS  # Move to LOGIN_SUCCESS state
         else:
-            print("Server: No valid password received. Closing connection.")
+            print(f"Server: No valid password received. Closing connection to {self.address}")
             self._close_connection()  # Close the connection if no valid password
             self.next_state = START  # Return to the START state
 
@@ -177,7 +175,6 @@ class ConnectionHandler:
         # Send 'CMS>' followed by a carriage return
         self.send_data("CMS>\r")
         
-        print("Server: Login successful.")
         self.next_state = CLIENT_REQUEST  # Transition to CLIENT_REQUEST after login success
 
     def _handle_client_request(self):
@@ -186,8 +183,6 @@ class ConnectionHandler:
         request = self.wait_for_input("").rstrip("\r")  # Wait for client's request and strip trailing carriage return
 
         if request:
-            print(f"Server: Received client request: {request}")
-
             if request.startswith("FC"):  # Now handle 'FC' instead of ';FC:'
                 self._handle_message_proposal(request)  # Call _handle_message_proposal for FC messages
             elif request.startswith(";FW:"):
@@ -203,12 +198,12 @@ class ConnectionHandler:
             elif request.startswith("F>"):
                 self._handle_end_of_proposal(request)  # Call _handle_end_of_proposal for F> messages
             else:
-                print(f"Server: Unknown request '{request}'. Closing connection.")
+                print(f"Server: Unknown request '{request}'. Closing connection to {self.address}")
                 self._close_connection()  # Close connection if request type is unrecognized
                 self.next_state = CLOSE_CONNECTION  # Close the connection
 
         else:
-            print("Server: No valid request received. Closing connection.")
+            print(f"Server: No valid request received. Closing connection to {self.address}")
             self._close_connection()  # Close the connection if no valid request
             self.next_state = CLOSE_CONNECTION  # Close the connection
 
@@ -216,12 +211,8 @@ class ConnectionHandler:
         """Handle comment messages that begin with '; '."""
         self._log_debug(f"Handling comment message: {message}")
         
-        # You can process the comment here, depending on the protocol.
-        # For now, it simply logs the message.
-        print(f"Server: Comment received: {message}")
-        
-        # No need to change state, just process the comment and continue.
-        # The main loop will handle the state transition.
+        # Simply process the comment and continue without state change.
+        self._log_debug(f"Comment received: {message}")
 
     def _handle_forward_message(self, message):
         """Handle forward messages that begin with ';FW:'."""
@@ -254,7 +245,6 @@ class ConnectionHandler:
                 
                 # Send "FF" followed by a carriage return after receiving the data
                 self.send_data("FF\r")
-                print(f"Server: Received message data for ID: {message_instance.message_id}")
         
         except Exception as e:
             self._log_debug(f"Error handling end of proposal: {e}")
@@ -280,17 +270,16 @@ class ConnectionHandler:
         """Handle messages that begin with ';PQ:' for authentication challenge."""
         self._log_debug(f"Handling authentication challenge: {message}")
         # Further handling for authentication challenge can be added here
-        print(f"Server: Authentication challenge: {message}")
 
     def _handle_pending_message(self, message):
         """Handle messages that begin with ';PM:' for pending message."""
         self._log_debug(f"Handling pending message: {message}")
         # Further handling for pending messages can be added here
-        print(f"Server: Pending message: {message}")
 
     def _close_connection(self):
         """Close the connection."""
         if self.connection:
+            print(f"Server: Closing connection to {self.address}")
             self.logger.info(f"Closing connection to {self.address}")
             self.connection.close()
 
@@ -310,7 +299,7 @@ class ConnectionHandler:
             # Log the extracted parameters for debugging
             self._log_debug(f"Author: {self.author}, Version: {self.version}, Feature List: {self.feature_list}")
         else:
-            print("Server: Invalid SID format. Closing connection.")
+            print(f"Server: Invalid SID format. Closing connection to {self.address}")
             self._close_connection()  # Close the connection if format is incorrect
             self.next_state = CLOSE_CONNECTION  # Close the connection
 
