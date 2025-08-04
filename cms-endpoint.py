@@ -1,9 +1,12 @@
+import os
+import datetime
+import base64
+import zlib
 import socket
 import threading
 import logging
 import time
 import queue
-import re
 
 # State definitions for the state machine as strings
 START = "START"
@@ -255,6 +258,12 @@ class ConnectionHandler:
                 # Store the raw data in the message instance
                 message_instance.raw_data = data
                 
+                # Save the raw data to a file in the 'message/' folder
+                self._save_message_to_file(message_instance)
+                
+                # Decode the raw data, split it, and save as necessary
+                self._decode_and_split_message(message_instance)
+                
                 # Send "FF" followed by a carriage return after receiving the data
                 self.send_data("FF\r")
         
@@ -262,41 +271,128 @@ class ConnectionHandler:
             self._log_debug(f"Error handling end of proposal: {e}")
             self._close_connection()  # Close the connection in case of an error
 
-    def _wait_for_data(self, expected_size):
-        """Wait for the expected amount of data from the client with a 1-second timeout."""
-        data = b""
+    def _save_message_to_file(self, message_instance):
+        """Save the raw data to a .b2f file in the 'message/' folder."""
         try:
-            start_time = time.time()  # Initialize the time counter
-            while len(data) < expected_size:
-                if time.time() - start_time > 1:  # Timeout after 1 second of inactivity
-                    break
-                chunk = self.connection.recv(1024)  # Receive up to 1024 bytes at a time
-                if not chunk:
-                    break
-                data += chunk  # Append the received chunk
-                start_time = time.time()  # Reset the timeout counter every time data is received
+            # Ensure the 'message/' folder exists
+            if not os.path.exists('message'):
+                os.makedirs('message')
+            
+            # Get today's Julian date
+            julian_date = datetime.datetime.now().strftime("%Y%j")  # Format: YYYYDDD
+            
+            # File path with Julian date and message ID
+            file_name = f"message/{julian_date}-{message_instance.message_id}.b2f"
+            
+            # Write the raw data to the file
+            with open(file_name, 'wb') as f:
+                f.write(message_instance.raw_data)
+            
+            self._log_debug(f"Message data saved to {file_name}")
         except Exception as e:
-            self._log_debug(f"Error receiving data: {e}")
-        return data
+            self._log_debug(f"Error saving message to file: {e}")
 
-    def _handle_no_messages(self, message):
-        """Handle the case where the message starts with 'FF'."""
-        self._log_debug(f"Handling no messages request: {message}")
-        
-        # Handle the situation where there are no messages
-        # Send "FQ" followed by a carriage return
-        self.send_data("FQ\r")
-        self.next_state = CLIENT_REQUEST  # Return to CLIENT_REQUEST state
+    def _decode_and_split_message(self, message_instance):
+        """Decode the raw .b2f data (base64 + zlib), split into headers, body, and binary, and save them."""
+        try:
+            # Step 1: Base64 decode the raw .b2f data
+            decoded_data = base64.b64decode(message_instance.raw_data)
+            
+            # Step 2: Decompress the decoded data using zlib
+            decompressed_data = zlib.decompress(decoded_data)
+            
+            # Step 3: Convert the decompressed data to ASCII (B2F format is ASCII encoded)
+            decoded_message = decompressed_data.decode('ascii')
 
-    def _handle_authentication_challenge(self, message):
-        """Handle messages that begin with ';PQ:' for authentication challenge."""
-        self._log_debug(f"Handling authentication challenge: {message}")
-        # Further handling for authentication challenge can be added here
+            # Step 4: Split the decoded message into headers and body
+            # We assume the headers and body are separated by two newlines
+            headers, body_and_attachments = decoded_message.split("\n\n", 1)
 
-    def _handle_pending_message(self, message):
-        """Handle messages that begin with ';PM:' for pending message."""
-        self._log_debug(f"Handling pending message: {message}")
-        # Further handling for pending messages can be added here
+            # Save the headers to a file
+            self._save_headers_to_file(headers, message_instance)
+
+            # Step 5: Separate body and attachments
+            body, attachments = self._split_body_and_attachments(body_and_attachments)
+
+            # Save the body to a text file
+            self._save_body_to_file(body, message_instance)
+
+            # Save the binary attachments (if any) to .bin files
+            self._save_attachments_to_files(attachments, message_instance)
+            
+        except Exception as e:
+            self._log_debug(f"Error decoding and splitting message: {e}")
+
+    def _save_headers_to_file(self, headers, message_instance):
+        """Save the headers to a .txt file."""
+        try:
+            # Get today's Julian date for naming the file
+            julian_date = datetime.datetime.now().strftime("%Y%j")  # Format: YYYYDDD
+            
+            # File path for the headers .txt file
+            headers_file_name = f"message/{julian_date}-{message_instance.message_id}-headers.txt"
+            
+            # Write the headers to the file
+            with open(headers_file_name, 'w') as f:
+                f.write(headers)
+            
+            self._log_debug(f"Headers saved to {headers_file_name}")
+        except Exception as e:
+            self._log_debug(f"Error saving headers: {e}")
+
+    def _save_body_to_file(self, body, message_instance):
+        """Save the body text to a .txt file."""
+        try:
+            # Get today's Julian date for naming the file
+            julian_date = datetime.datetime.now().strftime("%Y%j")  # Format: YYYYDDD
+            
+            # File path for the body .txt file
+            body_file_name = f"message/{julian_date}-{message_instance.message_id}-body.txt"
+            
+            # Write the body to the file
+            with open(body_file_name, 'w') as f:
+                f.write(body)
+            
+            self._log_debug(f"Body saved to {body_file_name}")
+        except Exception as e:
+            self._log_debug(f"Error saving body: {e}")
+
+    def _split_body_and_attachments(self, body_and_attachments):
+        """Split the body from binary attachments in the message."""
+        # Assuming binary attachments are base64-encoded and follow a specific delimiter in the message.
+        # This part needs to be adjusted based on how the body and attachments are structured in the message.
+        body = ""
+        attachments = ""
+
+        # For simplicity, let's assume attachments are marked with a specific delimiter like '[ATTACHMENT]'.
+        if '[ATTACHMENT]' in body_and_attachments:
+            body, attachments = body_and_attachments.split('[ATTACHMENT]', 1)
+        else:
+            body = body_and_attachments  # No attachments, all is body
+
+        return body, attachments
+
+    def _save_attachments_to_files(self, attachments, message_instance):
+        """Save any binary attachments to separate .bin files."""
+        try:
+            # Get today's Julian date for naming the file
+            julian_date = datetime.datetime.now().strftime("%Y%j")  # Format: YYYYDDD
+            
+            # Split attachments (assuming they are base64-encoded)
+            if attachments:
+                # For each attachment, we decode and save it as a binary file
+                attachment_data = base64.b64decode(attachments)  # Decode base64-encoded attachment
+                
+                # File path for the attachment .bin file
+                attachment_file_name = f"message/{julian_date}-{message_instance.message_id}-attachment.bin"
+                
+                # Write the attachment to the file
+                with open(attachment_file_name, 'wb') as f:
+                    f.write(attachment_data)
+                
+                self._log_debug(f"Attachment saved to {attachment_file_name}")
+        except Exception as e:
+            self._log_debug(f"Error saving attachments: {e}")
 
     def _close_connection(self):
         """Close the connection."""
@@ -324,6 +420,7 @@ class ConnectionHandler:
             print(f"Server: Invalid SID format. Closing connection to {self.address}")
             self._close_connection()  # Close the connection if format is incorrect
             self.next_state = CLOSE_CONNECTION  # Close the connection
+
 
 class TelnetServer:
     def __init__(self, host="0.0.0.0", port=8772):
