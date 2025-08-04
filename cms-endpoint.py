@@ -104,9 +104,14 @@ class ConnectionHandler:
         self.send_data(prompt)
         try:
             self.connection.settimeout(self.timeout)  # Use the same timeout for callsign entry
-            response = self.connection.recv(1024).decode().rstrip("\r")  # Receive client input and strip trailing carriage return
-            self._log_debug(f"Received data: {response}")
-            return response
+            response = self.connection.recv(1024)  # Receive the raw byte data
+            response_str = response.decode().rstrip("\r")  # Decode to string and strip trailing carriage return
+            
+            # Log the response in hexadecimal for debugging
+            self._log_debug(f"Received data (hex): {' '.join([hex(byte) for byte in response])}")
+            self._log_debug(f"Received data (string): {response_str}")
+            
+            return response_str
         except socket.timeout:
             self._log_debug(f"Timeout occurred while waiting for input.")
             return None
