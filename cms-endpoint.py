@@ -147,7 +147,6 @@ class ConnectionHandler:
             self.client_callsign = callsign  # Save the callsign
             self.next_state = PASSWORD_VALIDATION  # Move to PASSWORD_VALIDATION state
         else:
-            print(f"Server: No valid callsign received. Closing connection to {self.address}")
             self._close_connection()  # Close the connection if no valid callsign
             self.next_state = START  # Return to the START state
 
@@ -161,7 +160,6 @@ class ConnectionHandler:
             self.client_password = password  # Save the password as an instance variable
             self.next_state = LOGIN_SUCCESS  # Move to LOGIN_SUCCESS state
         else:
-            print(f"Server: No valid password received. Closing connection to {self.address}")
             self._close_connection()  # Close the connection if no valid password
             self.next_state = START  # Return to the START state
 
@@ -198,12 +196,10 @@ class ConnectionHandler:
             elif request.startswith("F>"):
                 self._handle_end_of_proposal(request)  # Call _handle_end_of_proposal for F> messages
             else:
-                print(f"Server: Unknown request '{request}'. Closing connection to {self.address}")
                 self._close_connection()  # Close connection if request type is unrecognized
                 self.next_state = CLOSE_CONNECTION  # Close the connection
 
         else:
-            print(f"Server: No valid request received. Closing connection to {self.address}")
             self._close_connection()  # Close the connection if no valid request
             self.next_state = CLOSE_CONNECTION  # Close the connection
 
