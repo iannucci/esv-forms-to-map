@@ -212,6 +212,17 @@ class ConnectionHandler:
             self._close_connection()  # Close the connection if no valid request
             self.next_state = CLOSE_CONNECTION  # Close the connection
 
+    def _handle_comment(self, message):
+        """Handle comment messages that begin with '; '."""
+        self._log_debug(f"Handling comment message: {message}")
+        
+        # You can process the comment here, depending on the protocol.
+        # For now, it simply logs the message.
+        print(f"Server: Comment received: {message}")
+        
+        # No need to change state, just process the comment and continue.
+        # The main loop will handle the state transition.
+
     def _handle_forward_message(self, message):
         """Handle forward messages that begin with ';FW:'."""
         self._log_debug(f"Handling forward message: {message}")
@@ -277,6 +288,12 @@ class ConnectionHandler:
         # Further handling for pending messages can be added here
         print(f"Server: Pending message: {message}")
 
+    def _close_connection(self):
+        """Close the connection."""
+        if self.connection:
+            self.logger.info(f"Closing connection to {self.address}")
+            self.connection.close()
+
     def _parse_sid(self, message):
         """Parse the message that starts with '[' and ends with ']'. Extract author, version, and feature list."""
         self._log_debug(f"Handling SID message: {message}")
@@ -296,12 +313,6 @@ class ConnectionHandler:
             print("Server: Invalid SID format. Closing connection.")
             self._close_connection()  # Close the connection if format is incorrect
             self.next_state = CLOSE_CONNECTION  # Close the connection
-
-    def _close_connection(self):
-        """Close the connection."""
-        if self.connection:
-            self.logger.info(f"Closing connection to {self.address}")
-            self.connection.close()
 
 class TelnetServer:
     def __init__(self, host="0.0.0.0", port=8772):
