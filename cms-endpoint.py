@@ -3,7 +3,6 @@ import threading
 import logging
 import time
 import queue
-import zlib
 import re
 
 # State definitions for the state machine as strings
@@ -105,7 +104,8 @@ class ConnectionHandler:
         self.send_data(prompt)
         try:
             self.connection.settimeout(self.timeout)  # Use the same timeout for callsign entry
-            response = self.connection.recv(1024).decode().strip()  # Receive client input
+            response = self.connection.recv(1024).decode().rstrip("\r")  # Receive client input and strip trailing carriage return
+            self._log_debug(f"Received data: {response}")
             return response
         except socket.timeout:
             self._log_debug(f"Timeout occurred while waiting for input.")
