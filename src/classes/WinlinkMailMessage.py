@@ -13,6 +13,7 @@ import datetime
 import base64
 import zlib
 import logging
+from classes.B2Message import B2Message 
 
 MAILBOX_FOLDER_NAME = "mailbox"
 
@@ -33,6 +34,7 @@ class WinlinkMailMessage:
         self.body_and_attachments = None
         self.body = None
         self.attachments = None
+        self.b2 = None
 
         if not os.path.exists(MAILBOX_FOLDER_NAME):
             os.makedirs(MAILBOX_FOLDER_NAME)
@@ -74,6 +76,10 @@ class WinlinkMailMessage:
         """Decode the raw .b2f data (base64 + zlib), split into headers, body, and binary, and save them."""
         try:
             self.raw_data = data
+            self.b2 = B2Message(self.raw_data)
+
+            self._log_debug(f"B2 subject: {self.b2.subject}")
+
             self._save_raw_data_to_file()
             decoded_data = base64.b64decode(self.raw_data)
             decompressed_data = zlib.decompress(decoded_data)
