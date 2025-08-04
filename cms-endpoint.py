@@ -277,6 +277,26 @@ class ConnectionHandler:
         # Further handling for pending messages can be added here
         print(f"Server: Pending message: {message}")
 
+    def _parse_sid(self, message):
+        """Parse the message that starts with '[' and ends with ']'. Extract author, version, and feature list."""
+        self._log_debug(f"Handling SID message: {message}")
+        
+        # Remove the brackets and split by '-'
+        content = message[1:-1]  # Strip the surrounding brackets
+        parts = content.split('-')
+        
+        if len(parts) >= 2:  # We expect at least author and feature list
+            self.author = parts[0]  # First parameter is the author
+            self.version = parts[1] if len(parts) > 2 else None  # Optional: Second parameter is the version (or None if missing)
+            self.feature_list = parts[2] if len(parts) > 2 else parts[1]  # Third parameter is the feature list, or version if no third part
+
+            # Log the extracted parameters for debugging
+            self._log_debug(f"Author: {self.author}, Version: {self.version}, Feature List: {self.feature_list}")
+        else:
+            print("Server: Invalid SID format. Closing connection.")
+            self._close_connection()  # Close the connection if format is incorrect
+            self.next_state = CLOSE_CONNECTION  # Close the connection
+
     def _close_connection(self):
         """Close the connection."""
         if self.connection:
