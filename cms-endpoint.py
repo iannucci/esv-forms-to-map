@@ -167,7 +167,7 @@ class ConnectionHandler:
     def _handle_client_request(self):
         """Handle the client's request after login."""
         self._log_debug("Handling CLIENT_REQUEST state")
-        request = self.wait_for_input("")  # Wait for client's request without a custom prompt
+        request = self.wait_for_input("").rstrip("\r")  # Wait for client's request without a custom prompt
 
         if request:
             print(f"Server: Received client request: {request}")
