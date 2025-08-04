@@ -245,21 +245,18 @@ class WinlinkConnection:
         # Process messages in the queue in FIFO order
         try:
             while not self.message_queue.empty():
-                message_instance = self.message_queue.get()  # Get the first message in the queue
-                self._log_debug(f"Processing message ID: {message_instance.message_id}")
+                message = self.message_queue.get()  # Get the first message in the queue
+                self._log_debug(f"Processing message ID: {message.message_id}")
                 
                 # Await up to uncompressed_size bytes of data from the client
                 self.send_data("FS Y\r")  # Send the prompt to the client
-                data = self._wait_for_data(message_instance.uncompressed_size)
+                data = self._wait_for_data(message.uncompressed_size)
                 
                 # Store the raw data in the message instance
-                message_instance.raw_data = data
+                message.record_messsage_data(data)
                 
-                # Save the raw data to a file in the 'message/' folder
-                self._save_message_to_file(message_instance)
-                
-                # Decode the raw data, split it, and save as necessary
-                self._decode_and_split_message(message_instance)
+                # Save the raw data to a file 
+                message.save_message_to_files()
                 
                 # Send "FF" followed by a carriage return after receiving the data
                 self.send_data("FF\r")
