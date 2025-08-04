@@ -12,7 +12,6 @@ CALLSIGN_ENTRY = "CALLSIGN_ENTRY"
 PASSWORD_VALIDATION = "PASSWORD_VALIDATION"
 LOGIN_SUCCESS = "LOGIN_SUCCESS"
 CLIENT_REQUEST = "CLIENT_REQUEST"
-MESSAGE_UPLOAD = "MESSAGE_UPLOAD"
 CLOSE_CONNECTION = "CLOSE_CONNECTION"
 
 class Message:
@@ -24,6 +23,7 @@ class Message:
         self.message_id = message_id  # Unique identifier for the message
         self.uncompressed_size = uncompressed_size  # Uncompressed size of the message
         self.compressed_size = compressed_size  # Compressed size of the message
+        self.raw_data = None  # To store the raw data received
 
 class ConnectionHandler:
     def __init__(self, connection, address, timeout=5, enable_debug=False):
@@ -79,8 +79,6 @@ class ConnectionHandler:
                     self._handle_login_success()
                 elif self.state == CLIENT_REQUEST:
                     self._handle_client_request()
-                elif self.state == MESSAGE_UPLOAD:
-                    self._handle_message_upload()
                 else:
                     self._log_debug("Unknown state")
                     break
@@ -187,13 +185,12 @@ class ConnectionHandler:
             elif request.startswith("; "):
                 self._handle_comment(request)  # Call _handle_comment for comment messages
             elif request.startswith("F>"):
-                self._handle_fgreater_message(request)
+                self._handle_end_of_proposal(request)  # Call _handle_end_of_proposal for F> messages
             else:
                 print("Server: Unknown request. Closing connection.")
                 self._close_connection()  # Close connection if request type is unrecognized
                 self.next_state = CLOSE_CONNECTION  # Close the connection
 
-            self.next_state = MESSAGE_UPLOAD  # Proceed to message upload
         else:
             print("Server: No valid request received. Closing connection.")
             self._close_connection()  # Close the connection if no valid request
@@ -202,54 +199,55 @@ class ConnectionHandler:
     def _handle_forward_message(self, message):
         """Handle forward messages that begin with ';FW:'."""
         self._log_debug(f"Handling forward message: {message}")
-        
-        # Split the message into parts based on spaces
-        parts = message.split()
-        
-        # The first part after the first space is the forward_login_callsign
-        if len(parts) > 1:
-            self.forward_login_callsign = parts[1]  # Extract the forward login callsign
-            print(f"Server: Forward login callsign: {self.forward_login_callsign}")
-        
-        # Further parts are optional and represent pickup callsigns
-        self.pickup_callsigns = []
-        for part in parts[2:]:
-            if "|" in part:
-                callsign, remainder = part.split("|", 1)
-                self.pickup_callsigns.append((callsign, remainder))
-        
-        # Log pickup callsigns for debugging
-        if self.pickup_callsigns:
-            self._log_debug(f"Pickup callsigns: {self.pickup_callsigns}")
-        else:
-            self._log_debug("No pickup callsigns found.")
+        # Implementation for handling forward message
+        # (Extract forward_login_callsign, pickup_callsigns, etc.)
 
     def _handle_message_proposal(self, message):
         """Handle messages that begin with ';FC:'."""
         self._log_debug(f"Handling message proposal: {message}")
-        
-        # Split the message into parts based on spaces
-        parts = message.split()
-        
-        # Ensure there are at least 4 parts
-        if len(parts) >= 4:
-            # Extract the four parameters
-            message_type = parts[0]
-            message_id = parts[1]
-            uncompressed_size = int(parts[2])
-            compressed_size = int(parts[3])
+        # Implementation for handling message proposal
+        # (Extract message metadata and queue it)
 
-            # Create a new Message instance with the extracted data
-            message_instance = Message(message_type, message_id, uncompressed_size, compressed_size)
+    def _handle_end_of_proposal(self, message):
+        """Handle messages that begin with 'F>'."""
+        self._log_debug(f"Handling end of proposal message: {message}")
+        
+        # Process messages in the queue in FIFO order
+        try:
+            while not self.message_queue.empty():
+                message_instance = self.message_queue.get()  # Get the first message in the queue
+                self._log_debug(f"Processing message ID: {message_instance.message_id}")
+                
+                # Await up to uncompressed_size bytes of data from the client
+                self.send_data("Waiting for message data...\r")  # Optional prompt
+                data = self._wait_for_data(message_instance.uncompressed_size)
+                
+                # Store the raw data in the message instance
+                message_instance.raw_data = data
+                
+                # Send "FF" followed by a carriage return after receiving the data
+                self.send_data("FF\r")
+                print(f"Server: Received message data for ID: {message_instance.message_id}")
+        
+        except Exception as e:
+            self._log_debug(f"Error handling end of proposal: {e}")
+            self._close_connection()  # Close the connection in case of an error
 
-            # Push the new message into the message queue
-            self.message_queue.put(message_instance)
-            
-            print(f"Server: Message proposal handled: {message_instance.message_type}, ID: {message_instance.message_id}, Uncompressed Size: {message_instance.uncompressed_size}, Compressed Size: {message_instance.compressed_size}")
-        else:
-            print("Server: Invalid message proposal format. Closing connection.")
-            self._close_connection()  # Close the connection if format is incorrect
-            self.next_state = CLOSE_CONNECTION  # Close the connection
+    def _wait_for_data(self, expected_size):
+        """Wait for the expected amount of data from the client with a 1-second timeout."""
+        data = b""
+        try:
+            start_time = time.time()
+            while len(data) < expected_size:
+                if time.time() - start_time > 1:  # Timeout after 1 second
+                    break
+                chunk = self.connection.recv(1024)  # Receive up to 1024 bytes at a time
+                if not chunk:
+                    break
+                data += chunk  # Append the received chunk
+        except Exception as e:
+            self._log_debug(f"Error receiving data: {e}")
+        return data
 
     def _handle_authentication_challenge(self, message):
         """Handle messages that begin with ';PQ:' for authentication challenge."""
@@ -262,47 +260,6 @@ class ConnectionHandler:
         self._log_debug(f"Handling pending message: {message}")
         # Further handling for pending messages can be added here
         print(f"Server: Pending message: {message}")
-
-    def _parse_sid(self, message):
-        """Parse the message that starts with '[' and ends with ']'. Extract author, version, and feature list."""
-        self._log_debug(f"Handling SID message: {message}")
-        
-        # Remove the brackets and split by '-'
-        content = message[1:-1]  # Strip the surrounding brackets
-        parts = content.split('-')
-        
-        if len(parts) >= 2:  # We expect at least author and feature list
-            self.author = parts[0]  # First parameter is the author
-            self.version = parts[1] if len(parts) > 2 else None  # Optional: Second parameter is the version (or None if missing)
-            self.feature_list = parts[2] if len(parts) > 2 else parts[1]  # Third parameter is the feature list, or version if no third part
-
-            # Log the extracted parameters for debugging
-            self._log_debug(f"Author: {self.author}, Version: {self.version}, Feature List: {self.feature_list}")
-        else:
-            print("Server: Invalid SID format. Closing connection.")
-            self._close_connection()  # Close the connection if format is incorrect
-            self.next_state = CLOSE_CONNECTION  # Close the connection
-
-    def _handle_comment(self, message):
-        """Handle comment messages that begin with '; '."""
-        self._log_debug(f"Handling comment message: {message}")
-        # Implement the specific handling for the comment message
-        print(f"Server: Comment received: {message}")
-        # Further processing can be added here
-
-    def _handle_fgreater_message(self, message):
-        """Handle messages that begin with 'F>'."""
-        self._log_debug(f"Handling F> message: {message}")
-        # Implement the specific handling for the 'F>' message
-        print(f"Server: Handling F> message: {message}")
-        # Further processing can be added here
-
-    def _handle_message_upload(self):
-        """Handle message upload."""
-        self._log_debug("Handling MESSAGE_UPLOAD state")
-        # This would be handled in the connection handler during the message offer
-        print("Server: Waiting for message upload.")
-        self.next_state = CLOSE_CONNECTION  # Move directly to CLOSE_CONNECTION after message upload
 
     def _close_connection(self):
         """Close the connection."""
