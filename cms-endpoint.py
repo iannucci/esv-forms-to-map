@@ -175,13 +175,17 @@ class ConnectionHandler:
             print(f"Server: Received client request: {request}")
 
             if request.startswith(";FW:"):
-                self._handle_message_proposal(request)  # Call the new method for message proposal handling
+                self._handle_forward_message(request)  # Call _handle_forward_message for FW messages
+            elif request.startswith(";FC:"):
+                self._handle_message_proposal(request)  # Call _handle_message_proposal for FC messages
+            elif request.startswith(";PQ:"):
+                self._handle_authentication_challenge(request)  # Call _handle_authentication_challenge for PQ messages
+            elif request.startswith(";PM:"):
+                self._handle_pending_message(request)  # Call _handle_pending_message for PM messages
             elif request.startswith("[") and request.endswith("]"):
                 self._parse_sid(request)  # Call _parse_sid for bracketed messages
             elif request.startswith("; "):
-                self._handle_semicolon_message(request)
-            elif request.startswith("FC"):
-                self._handle_fc_message(request)
+                self._handle_comment(request)  # Call _handle_comment for comment messages
             elif request.startswith("F>"):
                 self._handle_fgreater_message(request)
             else:
@@ -195,8 +199,33 @@ class ConnectionHandler:
             self._close_connection()  # Close the connection if no valid request
             self.next_state = CLOSE_CONNECTION  # Close the connection
 
+    def _handle_forward_message(self, message):
+        """Handle forward messages that begin with ';FW:'."""
+        self._log_debug(f"Handling forward message: {message}")
+        
+        # Split the message into parts based on spaces
+        parts = message.split()
+        
+        # The first part after the first space is the forward_login_callsign
+        if len(parts) > 1:
+            self.forward_login_callsign = parts[1]  # Extract the forward login callsign
+            print(f"Server: Forward login callsign: {self.forward_login_callsign}")
+        
+        # Further parts are optional and represent pickup callsigns
+        self.pickup_callsigns = []
+        for part in parts[2:]:
+            if "|" in part:
+                callsign, remainder = part.split("|", 1)
+                self.pickup_callsigns.append((callsign, remainder))
+        
+        # Log pickup callsigns for debugging
+        if self.pickup_callsigns:
+            self._log_debug(f"Pickup callsigns: {self.pickup_callsigns}")
+        else:
+            self._log_debug("No pickup callsigns found.")
+
     def _handle_message_proposal(self, message):
-        """Handle messages that begin with ';FW:'."""
+        """Handle messages that begin with ';FC:'."""
         self._log_debug(f"Handling message proposal: {message}")
         
         # Split the message into parts based on spaces
@@ -222,6 +251,18 @@ class ConnectionHandler:
             self._close_connection()  # Close the connection if format is incorrect
             self.next_state = CLOSE_CONNECTION  # Close the connection
 
+    def _handle_authentication_challenge(self, message):
+        """Handle messages that begin with ';PQ:' for authentication challenge."""
+        self._log_debug(f"Handling authentication challenge: {message}")
+        # Further handling for authentication challenge can be added here
+        print(f"Server: Authentication challenge: {message}")
+
+    def _handle_pending_message(self, message):
+        """Handle messages that begin with ';PM:' for pending message."""
+        self._log_debug(f"Handling pending message: {message}")
+        # Further handling for pending messages can be added here
+        print(f"Server: Pending message: {message}")
+
     def _parse_sid(self, message):
         """Parse the message that starts with '[' and ends with ']'. Extract author, version, and feature list."""
         self._log_debug(f"Handling SID message: {message}")
@@ -242,18 +283,11 @@ class ConnectionHandler:
             self._close_connection()  # Close the connection if format is incorrect
             self.next_state = CLOSE_CONNECTION  # Close the connection
 
-    def _handle_semicolon_message(self, message):
-        """Handle messages that begin with '; '."""
-        self._log_debug(f"Handling semicolon message: {message}")
-        # Implement the specific handling for the '; ' message
-        print(f"Server: Handling semicolon message: {message}")
-        # Further processing can be added here
-
-    def _handle_fc_message(self, message):
-        """Handle messages that begin with 'FC'."""
-        self._log_debug(f"Handling FC message: {message}")
-        # Implement the specific handling for the 'FC' message
-        print(f"Server: Handling FC message: {message}")
+    def _handle_comment(self, message):
+        """Handle comment messages that begin with '; '."""
+        self._log_debug(f"Handling comment message: {message}")
+        # Implement the specific handling for the comment message
+        print(f"Server: Comment received: {message}")
         # Further processing can be added here
 
     def _handle_fgreater_message(self, message):
