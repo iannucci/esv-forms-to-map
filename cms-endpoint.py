@@ -187,7 +187,7 @@ class ConnectionHandler:
             elif request.startswith("F>"):
                 self._handle_end_of_proposal(request)  # Call _handle_end_of_proposal for F> messages
             else:
-                print("Server: Unknown request. Closing connection.")
+                print("Server: Unknown request {request}. Closing connection.")
                 self._close_connection()  # Close connection if request type is unrecognized
                 self.next_state = CLOSE_CONNECTION  # Close the connection
 
