@@ -195,6 +195,8 @@ class ConnectionHandler:
                 self._handle_comment(request)  # Call _handle_comment for comment messages
             elif request.startswith("F>"):
                 self._handle_end_of_proposal(request)  # Call _handle_end_of_proposal for F> messages
+            elif request.startswith(";FF:"):
+                self._handle_no_messages(request)  # Call _handle_no_messages for ;FF: messages
             else:
                 self._close_connection()  # Close connection if request type is unrecognized
                 self.next_state = CLOSE_CONNECTION  # Close the connection
@@ -279,6 +281,15 @@ class ConnectionHandler:
         except Exception as e:
             self._log_debug(f"Error receiving data: {e}")
         return data
+
+    def _handle_no_messages(self, message):
+        """Handle the case where the message starts with ';FF:'."""
+        self._log_debug(f"Handling no messages request: {message}")
+        
+        # Handle the situation where there are no messages
+        # Send "FQ" followed by a carriage return
+        self.send_data("FQ\r")
+        self.next_state = CLIENT_REQUEST  # Return to CLIENT_REQUEST state
 
     def _handle_authentication_challenge(self, message):
         """Handle messages that begin with ';PQ:' for authentication challenge."""
