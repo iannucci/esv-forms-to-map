@@ -272,6 +272,27 @@ class ConnectionHandler:
             self._log_debug(f"Error handling end of proposal: {e}")
             self._close_connection()  # Close the connection in case of an error
 
+    def _wait_for_data(self, expected_size):
+        """Wait for the expected amount of data from the client."""
+        received_data = b""
+        try:
+            while len(received_data) < expected_size:
+                # Receive in chunks (you can adjust the chunk size if necessary)
+                chunk = self.connection.recv(min(4096, expected_size - len(received_data)))
+                if not chunk:
+                    break  # If no more data is received, exit the loop
+                received_data += chunk
+
+            # Log the data received
+            self._log_debug(f"Received {len(received_data)} bytes of data.")
+            if len(received_data) < expected_size:
+                self._log_debug("Warning: Received less data than expected.")
+            
+            return received_data
+        except socket.timeout:
+            self._log_debug(f"Timeout occurred while waiting for {expected_size} bytes of data.")
+            return None
+
     def _save_message_to_file(self, message_instance):
         """Save the raw data to a .b2f file in the 'message/' folder."""
         try:
@@ -398,7 +419,6 @@ class ConnectionHandler:
     def _close_connection(self):
         """Close the connection."""
         if self.connection:
-            print(f"Server: Closing connection to {self.address}")
             self.logger.info(f"Closing connection to {self.address}")
             self.connection.close()
 
