@@ -4,6 +4,7 @@ import logging
 import time
 import queue
 import zlib
+import re
 
 # State definitions for the state machine as strings
 START = "START"
@@ -167,7 +168,7 @@ class ConnectionHandler:
     def _handle_client_request(self):
         """Handle the client's request after login."""
         self._log_debug("Handling CLIENT_REQUEST state")
-        request = self.wait_for_input("").rstrip("\r")  # Wait for client's request without a custom prompt
+        request = self.wait_for_input("").rstrip("\r")  # Wait for client's request and strip trailing carriage return
 
         if request:
             print(f"Server: Received client request: {request}")
@@ -180,7 +181,7 @@ class ConnectionHandler:
                 self._handle_authentication_challenge(request)  # Call _handle_authentication_challenge for PQ messages
             elif request.startswith(";PM:"):
                 self._handle_pending_message(request)  # Call _handle_pending_message for PM messages
-            elif request.startswith("[") and request.endswith("]"):
+            elif re.match(r"^\[.*\]$", request):  # Use regex to match bracketed messages
                 self._parse_sid(request)  # Call _parse_sid for bracketed messages
             elif request.startswith("; "):
                 self._handle_comment(request)  # Call _handle_comment for comment messages
