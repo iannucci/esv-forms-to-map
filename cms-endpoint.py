@@ -104,8 +104,9 @@ class ConnectionHandler:
         self.send_data(prompt)
         try:
             self.connection.settimeout(self.timeout)  # Set the timeout for the connection
-            # Read data from the client until a carriage return is encountered
             response = b""
+            
+            # Keep reading until a carriage return (\r) is encountered
             while True:
                 byte = self.connection.recv(1)  # Read one byte at a time
                 if not byte:
@@ -113,7 +114,7 @@ class ConnectionHandler:
                 response += byte
                 if byte == b'\r':  # Carriage return indicates the end of the line
                     break
-        
+
             response_str = response.decode()  # Convert bytes to a string
             response_str = response_str.rstrip("\r")  # Strip the carriage return
 
