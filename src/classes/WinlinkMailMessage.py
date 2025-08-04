@@ -12,6 +12,7 @@ import os
 import datetime
 import base64
 import zlib
+import logging
 
 MAILBOX_FOLDER_NAME = "mailbox"
 
@@ -19,18 +20,40 @@ MAILBOX_FOLDER_NAME = "mailbox"
 class WinlinkMailMessage:
     """Class to represent a message with its metadata."""
     
-    def __init__(self, message_type=None, message_id=None, uncompressed_size=None, compressed_size=None):
+    def __init__(self, message_type=None, message_id=None, uncompressed_size=None, compressed_size=None, enable_debug=False):
         """Initialize the message with the necessary instance variables."""
+        self.time_created = datetime.datetime.now()
+        self.enable_debug = enable_debug
         self.message_type = message_type  # Type of the message (e.g., proposal, etc.)
         self.message_id = message_id  # Unique identifier for the message
         self.uncompressed_size = uncompressed_size  # Uncompressed size of the message
         self.compressed_size = compressed_size  # Compressed size of the message
-        self.filename = None
         self.raw_data = None  # To store the raw data received
         self.headers = None
         self.body_and_attachments = None
         self.body = None
         self.attachments = None
+
+        if not os.path.exists(MAILBOX_FOLDER_NAME):
+            os.makedirs(MAILBOX_FOLDER_NAME)
+
+        julian_date = self.time_created.strftime("%Y%j")  # Format: YYYYDDD
+        self.filename = f"{MAILBOX_FOLDER_NAME}/{julian_date}-{self.message_id}"
+
+        # Set up logging
+        self.logger = logging.getLogger(__name__)
+        self._setup_logging()
+
+    def _setup_logging(self):
+        """Set up logging configuration."""
+        log_level = logging.DEBUG if self.enable_debug else logging.INFO
+        logging.basicConfig(level=log_level,
+                            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        
+    def _log_debug(self, message):
+        """Log debug messages if debugging is enabled."""
+        if self.enable_debug:
+            self.logger.debug(message)
 
     def _split_body_and_attachments(self):
         """Split the body from binary attachments in the message."""
@@ -51,6 +74,7 @@ class WinlinkMailMessage:
         """Decode the raw .b2f data (base64 + zlib), split into headers, body, and binary, and save them."""
         try:
             self.raw_data = data
+            self._save_raw_data_to_file()
             decoded_data = base64.b64decode(self.raw_data)
             decompressed_data = zlib.decompress(decoded_data)
             decoded_message = decompressed_data.decode('ascii')
@@ -63,8 +87,6 @@ class WinlinkMailMessage:
     def save_message_to_files(self):
         """Save the raw data and the decoded data to files."""
         try:
-            if not os.path.exists(MAILBOX_FOLDER_NAME):
-                os.makedirs(MAILBOX_FOLDER_NAME)
             self._save_headers_to_file()
             self._save_body_to_file()
             self._save_attachments_to_files()
@@ -74,32 +96,38 @@ class WinlinkMailMessage:
     def _save_raw_data_to_file(self):
         """Save the raw data to a .b2f file."""
         try:
-            raw_file_name = f"{self.filename}-headers.b2f"
-            with open(raw_file_name, 'wb') as f:
+            raw_filename = f"{self.filename}.b2f"
+            with open(raw_filename, 'wb') as f:
                 f.write(self.raw_data)
-            self._log_debug(f"Raw data saved to {raw_file_name}")
+            self._log_debug(f"Raw data saved to {raw_filename}")
         except Exception as e:
             self._log_debug(f"Error saving raw data: {e}")
 
     def _save_headers_to_file(self):
         """Save the headers to a .txt file."""
-        try:
-            headers_file_name = f"{self.filename}-headers.txt"
-            with open(headers_file_name, 'w') as f:
-                f.write(self.headers)
-            self._log_debug(f"Headers saved to {headers_file_name}")
-        except Exception as e:
-            self._log_debug(f"Error saving headers: {e}")
+        if self.headers is not None:
+            try:
+                headers_filename = f"{self.filename}-headers.txt"
+                with open(headers_filename, 'w') as f:
+                    f.write(self.headers)
+                self._log_debug(f"Headers saved to {headers_filename}")
+            except Exception as e:
+                self._log_debug(f"Error saving headers: {e}")
+        else:
+            self._log_debug(f"Error saving headers: None")
 
     def _save_body_to_file(self):
         """Save the body to a .txt file."""
-        try:
-            body_file_name = f"{self.filename}-body.txt"
-            with open(body_file_name, 'w') as f:
-                f.write(self.body)
-            self._log_debug(f"Body saved to {body_file_name}")
-        except Exception as e:
-            self._log_debug(f"Error saving body: {e}")
+        if self.body is not None:
+            try:
+                body_filename = f"{self.filename}-body.txt"
+                with open(body_filename, 'w') as f:
+                    f.write(self.body)
+                self._log_debug(f"Body saved to {body_filename}")
+            except Exception as e:
+                self._log_debug(f"Error saving body: {e}")
+        else:
+            self._log_debug(f"Error saving body: None")
 
     def _save_attachments_to_files(self):
         """Save any binary attachments to separate .bin files."""
@@ -107,9 +135,9 @@ class WinlinkMailMessage:
             if self.attachments is not None:
                 # For each attachment, we decode and save it as a binary file
                 attachment_data = base64.b64decode(self.attachments)  # Decode base64-encoded attachment
-                attachment_file_name = f"{self.filename}-attachment.bin"
-                with open(attachment_file_name, 'wb') as f:
+                attachment_filename = f"{self.filename}-attachment.bin"
+                with open(attachment_filename, 'wb') as f:
                     f.write(attachment_data)
-                self._log_debug(f"Attachment saved to {attachment_file_name}")
+                self._log_debug(f"Attachment saved to {attachment_filename}")
         except Exception as e:
             self._log_debug(f"Error saving attachments: {e}")

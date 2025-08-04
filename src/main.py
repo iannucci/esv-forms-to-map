@@ -10,7 +10,7 @@ __status__ = "Experimental"
 
 import socket
 import threading
-from classes.winlink_connection import WinlinkConnection
+from classes.WinlinkConnection import WinlinkConnection
 
 LISTEN_IP = "0.0.0.0"
 LISTEN_PORT = 8772

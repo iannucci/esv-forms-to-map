@@ -13,7 +13,7 @@ import logging
 import queue
 import re 
 import socket
-from winlink_mail_message import WinlinkMailMessage
+from classes.WinlinkMailMessage import WinlinkMailMessage
 
 START = "START"
 CONNECTED = "CONNECTED"
@@ -177,7 +177,7 @@ class WinlinkConnection:
     def _handle_client_request(self):
         """Handle the client's request after login."""
         self._log_debug("Handling CLIENT_REQUEST state")
-        request = self.wait_for_input("").rstrip("\r")  # Wait for client's request and strip trailing carriage return
+        request = self.wait_for_input("")  # Wait for client's request and strip trailing carriage return
 
         if request:
             if request.startswith("FC"):  # Now handle 'FC' instead of ';FC:'
@@ -189,7 +189,7 @@ class WinlinkConnection:
             elif request.startswith(";PM:"):
                 self._handle_pending_message(request)  # Call _handle_pending_message for PM messages
             elif re.match(r"^\[.*\]$", request):  # Use regex to match bracketed messages
-                self._parse_sid(request)  # Call _parse_sid for bracketed messages
+                self._handle_sid(request)  # Call _parse_sid for bracketed messages
             elif request.startswith("; "):
                 self._handle_comment(request)  # Call _handle_comment for comment messages
             elif request.startswith("F>"):
@@ -215,6 +215,35 @@ class WinlinkConnection:
         # Implementation for handling forward message
         # (Extract forward_login_callsign, pickup_callsigns, etc.)
 
+    def _handle_authentication_challenge(self, message):
+        self._log_debug(f"Handling authentication challenge: {message}")
+        pass
+
+    def _handle_pending_message(self, message):
+        self._log_debug(f"Handling pending message: {message}")
+        pass
+
+    def _handle_sid(self, message):
+        """Parse the message that starts with '[' and ends with ']'. Extract author, version, and feature list."""
+        self._log_debug(f"Handling SID message: {message}")
+        
+        # Remove the brackets and split by '-'
+        content = message[1:-1]  # Strip the surrounding brackets
+        parts = content.split('-')
+        
+        if len(parts) >= 2:  # We expect at least author and feature list
+            self.author = parts[0]  # First parameter is the author
+            self.version = parts[1] if len(parts) > 2 else None  # Optional: Second parameter is the version (or None if missing)
+            self.feature_list = parts[2] if len(parts) > 2 else parts[1]  # Third parameter is the feature list, or version if no third part
+
+            # Log the extracted parameters for debugging
+            self._log_debug(f"Author: {self.author}, Version: {self.version}, Feature List: {self.feature_list}")
+        else:
+            print(f"Server: Invalid SID format. Closing connection to {self.address}")
+            self._close_connection()  # Close the connection if format is incorrect
+            self.next_state = CLOSE_CONNECTION  # Close the connection
+
+
     def _handle_message_proposal(self, message):
         """Handle messages that begin with 'FC'."""
         self._log_debug(f"Handling message proposal: {message}")
@@ -228,7 +257,7 @@ class WinlinkConnection:
             compressed_size = int(parts[4])
 
             # Create a new Message instance with the extracted data
-            new_message = WinlinkMailMessage(message_type, message_id, uncompressed_size, compressed_size)
+            new_message = WinlinkMailMessage(message_type, message_id, uncompressed_size, compressed_size, enable_debug=self.enable_debug)
 
             # Push the new message into the message queue for later processing
             self.message_queue.put(new_message)
@@ -259,11 +288,19 @@ class WinlinkConnection:
                 message.save_message_to_files()
                 
                 # Send "FF" followed by a carriage return after receiving the data
-                self.send_data("FF\r")
+                # self.send_data("FF\r")
         
         except Exception as e:
             self._log_debug(f"Error handling end of proposal: {e}")
             self._close_connection()  # Close the connection in case of an error
+
+    def _handle_no_messages(self, message):
+        """Handle the 'FF' request indicating no messages to process."""
+        self._log_debug(f"Handling no messages: {message}")
+        
+        # Send "FQ" followed by a carriage return
+        self.send_data("FQ\r")
+        self._log_debug("Sent 'FQ' indicating no messages")
 
     def _wait_for_data(self, expected_size):
         """Wait for the expected amount of data from the client."""
@@ -284,3 +321,8 @@ class WinlinkConnection:
             return received_data
         except socket.timeout:
             self
+
+    def _close_connection(self):
+        if self.connection:
+            self.logger.info(f"Closing connection to {self.address}")
+            self.connection.close
