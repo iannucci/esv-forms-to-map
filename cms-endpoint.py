@@ -7,6 +7,7 @@ import threading
 import logging
 import time
 import queue
+import re  # Import re for regular expressions
 
 # State definitions for the state machine as strings
 START = "START"
@@ -401,26 +402,33 @@ class ConnectionHandler:
             self.logger.info(f"Closing connection to {self.address}")
             self.connection.close()
 
+    def _handle_no_messages(self, request):
+        """Handle the ';FF:' request indicating no messages to process."""
+        self._log_debug(f"Handling no messages: {request}")
+        
+        # Send "FQ" followed by a carriage return
+        self.send_data("FQ\r")
+        self._log_debug("Sent 'FQ' indicating no messages")
+
     def _parse_sid(self, message):
-        """Parse the message that starts with '[' and ends with ']'. Extract author, version, and feature list."""
-        self._log_debug(f"Handling SID message: {message}")
-        
-        # Remove the brackets and split by '-'
-        content = message[1:-1]  # Strip the surrounding brackets
-        parts = content.split('-')
-        
-        if len(parts) >= 2:  # We expect at least author and feature list
-            self.author = parts[0]  # First parameter is the author
-            self.version = parts[1] if len(parts) > 2 else None  # Optional: Second parameter is the version (or None if missing)
-            self.feature_list = parts[2] if len(parts) > 2 else parts[1]  # Third parameter is the feature list, or version if no third part
+            """Parse the message that starts with '[' and ends with ']'. Extract author, version, and feature list."""
+            self._log_debug(f"Handling SID message: {message}")
+            
+            # Remove the brackets and split by '-'
+            content = message[1:-1]  # Strip the surrounding brackets
+            parts = content.split('-')
+            
+            if len(parts) >= 2:  # We expect at least author and feature list
+                self.author = parts[0]  # First parameter is the author
+                self.version = parts[1] if len(parts) > 2 else None  # Optional: Second parameter is the version (or None if missing)
+                self.feature_list = parts[2] if len(parts) > 2 else parts[1]  # Third parameter is the feature list, or version if no third part
 
-            # Log the extracted parameters for debugging
-            self._log_debug(f"Author: {self.author}, Version: {self.version}, Feature List: {self.feature_list}")
-        else:
-            print(f"Server: Invalid SID format. Closing connection to {self.address}")
-            self._close_connection()  # Close the connection if format is incorrect
-            self.next_state = CLOSE_CONNECTION  # Close the connection
-
+                # Log the extracted parameters for debugging
+                self._log_debug(f"Author: {self.author}, Version: {self.version}, Feature List: {self.feature_list}")
+            else:
+                print(f"Server: Invalid SID format. Closing connection to {self.address}")
+                self._close_connection()  # Close the connection if format is incorrect
+                self.next_state = CLOSE_CONNECTION  # Close the connection
 
 class TelnetServer:
     def __init__(self, host="0.0.0.0", port=8772):
