@@ -88,6 +88,7 @@ class ConnectionHandler:
         except Exception as e:
             self.logger.error(f"Error during connection handling: {e}")
         finally:
+            # Ensure the connection is closed at the end of the method
             self._close_connection()
 
     def send_data(self, data):
@@ -147,7 +148,6 @@ class ConnectionHandler:
             self.client_callsign = callsign  # Save the callsign
             self.next_state = PASSWORD_VALIDATION  # Move to PASSWORD_VALIDATION state
         else:
-            self._close_connection()  # Close the connection if no valid callsign
             self.next_state = START  # Return to the START state
 
     def _handle_password_validation(self):
@@ -160,7 +160,6 @@ class ConnectionHandler:
             self.client_password = password  # Save the password as an instance variable
             self.next_state = LOGIN_SUCCESS  # Move to LOGIN_SUCCESS state
         else:
-            self._close_connection()  # Close the connection if no valid password
             self.next_state = START  # Return to the START state
 
     def _handle_login_success(self):
@@ -198,12 +197,10 @@ class ConnectionHandler:
             elif request.startswith("FF"):  # Handle FF messages
                 self._handle_no_messages(request)  # Call _handle_no_messages for FF messages
             else:
-                self._close_connection()  # Close connection if request type is unrecognized
-                self.next_state = CLOSE_CONNECTION  # Close the connection
+                self.next_state = CLOSE_CONNECTION  # Close connection if request type is unrecognized
 
         else:
-            self._close_connection()  # Close the connection if no valid request
-            self.next_state = CLOSE_CONNECTION  # Close the connection
+            self.next_state = CLOSE_CONNECTION  # Close the connection if no valid request
 
     def _handle_comment(self, message):
         """Handle comment messages that begin with '; '."""
