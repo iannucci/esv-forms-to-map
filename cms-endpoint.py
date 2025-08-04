@@ -250,7 +250,7 @@ class ConnectionHandler:
                 self._log_debug(f"Processing message ID: {message_instance.message_id}")
                 
                 # Await up to uncompressed_size bytes of data from the client
-                self.send_data("FS Y\r")  # Now send "FS Y\r" to prompt the client for message data
+                self.send_data("FS Y\r")  # Send the prompt to the client
                 data = self._wait_for_data(message_instance.uncompressed_size)
                 
                 # Store the raw data in the message instance
@@ -267,14 +267,15 @@ class ConnectionHandler:
         """Wait for the expected amount of data from the client with a 1-second timeout."""
         data = b""
         try:
-            start_time = time.time()
+            start_time = time.time()  # Initialize the time counter
             while len(data) < expected_size:
-                if time.time() - start_time > 1:  # Timeout after 1 second
+                if time.time() - start_time > 1:  # Timeout after 1 second of inactivity
                     break
                 chunk = self.connection.recv(1024)  # Receive up to 1024 bytes at a time
                 if not chunk:
                     break
                 data += chunk  # Append the received chunk
+                start_time = time.time()  # Reset the timeout counter every time data is received
         except Exception as e:
             self._log_debug(f"Error receiving data: {e}")
         return data
