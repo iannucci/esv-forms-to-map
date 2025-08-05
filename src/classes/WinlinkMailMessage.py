@@ -76,7 +76,7 @@ class WinlinkMailMessage:
         """Decode the raw .b2f data (base64 + zlib), split into headers, body, and binary, and save them."""
         try:
             self.raw_data = data
-            self.b2 = B2Message(self.raw_data)
+            self.b2 = B2Message(self.raw_data, enable_debug=self.enable_debug)
 
             self._log_debug(f"B2 subject: {self.b2.subject}")
 
