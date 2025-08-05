@@ -14,6 +14,7 @@ import queue
 import re 
 import socket
 from classes.WinlinkMailMessage import WinlinkMailMessage
+import traceback
 
 START = "START"
 CONNECTED = "CONNECTED"
@@ -23,9 +24,11 @@ LOGIN_SUCCESS = "LOGIN_SUCCESS"
 CLIENT_REQUEST = "CLIENT_REQUEST"
 CLOSE_CONNECTION = "CLOSE_CONNECTION"
 
+TIMEOUT_IN_SECONDS = 5
+
 
 class WinlinkConnection:
-	def __init__(self, connection, address, timeout=5, enable_debug=False):
+	def __init__(self, connection, address, timeout=TIMEOUT_IN_SECONDS, enable_debug=False):
 		"""Initialize the connection handler and encapsulate socket handling."""
 		self.connection = connection
 		self.address = address
@@ -280,6 +283,7 @@ class WinlinkConnection:
 				# Await up to uncompressed_size bytes of data from the client
 				self.send_data("FS Y\r")  # Send the prompt to the client
 				data = self._wait_for_data(message.uncompressed_size)
+				self._log_debug(f"Received {len(data)} bytes from client")
 				
 				# Store the raw data in the message instance
 				message.record_messsage_data(data)
@@ -304,23 +308,30 @@ class WinlinkConnection:
 
 	def _wait_for_data(self, expected_size):
 		"""Wait for the expected amount of data from the client."""
-		received_data = b""
+		# received_data = b""
+		received_data = bytearray()
+		self._log_debug(f"Ready to receive message data from client -- expected size {expected_size}")
 		try:
 			while len(received_data) < expected_size:
 				# Receive in chunks (you can adjust the chunk size if necessary)
-				chunk = self.connection.recv(min(4096, expected_size - len(received_data)))
+				# chunk = self.connection.recv(min(4096, expected_size - len(received_data)))
+				chunk = self.connection.recv(4096)
+				if chunk is not None:
+					self._log_debug(f"Received chunk of length {len(chunk)}")
+				else:
+					self._log_debug("connection.recv() returned None")
 				if not chunk:
 					break  # If no more data is received, exit the loop
 				received_data += chunk
 
 			# Log the data received
-			self._log_debug(f"Received {len(received_data)} bytes of data.")
+			self._log_debug(f"Received {len(received_data)} bytes of data, expected {expected_size}")
 			if len(received_data) < expected_size:
 				self._log_debug("Warning: Received less data than expected.")
 			
 			return received_data
 		except socket.timeout:
-			self
+			return received_data
 
 	def _close_connection(self):
 		if self.connection:

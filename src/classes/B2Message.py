@@ -54,7 +54,7 @@ class B2Message:
 		self.offset = None
 		self.transmitted_checksum = None
 		self.lead_bytes = None
-		self.compressed_data = None
+		self.compressed_data = bytearray()
 		self.headers = None
 		self.body = None
 		self.attachments = None
@@ -87,7 +87,7 @@ class B2Message:
 
 	def _calculate_checksum(self) -> int:
 		"""Checksum as described: ((sum & 0xFF) * -1) & 0xFF"""
-		checksum = sum(self.raw_data) & 0xFF
+		checksum = sum(self.compressed_data) & 0xFF
 		return ((checksum * -1) & 0xFF)
 
 	def _parse_b2_message(self):
@@ -125,13 +125,12 @@ class B2Message:
 		self._log_debug(f"Offset is {self.offset}")
 
 		raw_index = end_offset + 1  # end_offset points to NUL; skip over it
-		compressed_data = bytearray()
 		compressed_index = 0
 		if self.offset != 0:
 			if self.raw_data[raw_index] != STX or self.raw_data[raw_index+1] != 0x06:
 				raise ValueError("Expected STX 0x06 before lead-bytes")
 			raw_index += 2
-			compressed_data[0:6] = self.raw_data[raw_index:raw_index+6]
+			self.compressed_data[0:6] = self.raw_data[raw_index:raw_index+6]
 			raw_index += 6
 			compressed_index += 6
 
@@ -153,22 +152,23 @@ class B2Message:
 				if last_raw_index > raw_data_len:
 					raise ValueError(f"Malformed message block -- too short -- expected {last_raw_index} got {raw_data_len}")
 				self._log_debug(f"Expecting compressed block of {block_length} bytes at index {raw_index}")
-				compressed_data[compressed_index,last_compressed_index] = self.raw_data[raw_index:last_raw_index]
+				self.compressed_data[compressed_index:last_compressed_index] = self.raw_data[raw_index:last_raw_index]
 				compressed_index = last_compressed_index
 				raw_index = last_raw_index
 				self._log_debug(f"Captured block of length {block_length}")
 			elif self.raw_data[raw_index] == EOT:
-				# It is a checksum block
+				self._log_debug(f"Found EOT at index {raw_index}")
 				raw_index += 1
-				# that appears at the very end of the raw data?
-				if raw_index != raw_data_len:
-					raise ValueError("Malformed checksum block")
 				self.transmitted_checksum = self.raw_data[raw_index]
-				calculated_checksum = self._calculate_checksum(compressed_data)
+				calculated_checksum = self._calculate_checksum()
 				if self.transmitted_checksum != calculated_checksum:
-					raise ValueError(f"Checksum mismatch: expected {calculated_checksum:02X}, got {self.transmitted_checksum:02X}")
+					raise ValueError(f"Checksum mismatch: expected 0x{calculated_checksum:02X}, got 0x{self.transmitted_checksum:02X}")
+				else:
+					self._log_debug(f"Checksum match")
+					return
 			else:
-				raise ValueError(f"Malformed message block at index {raw_index} -- expected STX or EOT, got {self.raw_data[raw_index]:02X}")
+				print(f'{self.raw_data[raw_index-1]:02X} {self.raw_data[raw_index]:02X}')
+				raise ValueError(f"Malformed message block at index {raw_index} -- expected STX or EOT, got 0x{self.raw_data[raw_index]:02X}")
 
 	def _split_body_and_attachments(self):
 		"""Split the body from binary attachments in the message."""
