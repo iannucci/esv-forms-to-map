@@ -64,24 +64,22 @@ class B2Message:
 		self._setup_logging()
 
 		self._parse_b2_message()
-  
-  
-  
+
+
+
 		# move this someplace better
 		decoded_data = base64.b64decode(self.raw_data)
 		decompressed_data = zlib.decompress(decoded_data)
 		decoded_message = decompressed_data.decode('ascii')
 		self.headers, self.body_and_attachments = decoded_message.split("\n\n", 1)
 		self.body, self.attachments = self._split_body_and_attachments()
-  
-  
-  
+
 
 	def _setup_logging(self):
 		"""Set up logging configuration."""
 		log_level = logging.DEBUG if self.enable_debug else logging.INFO
 		logging.basicConfig(level=log_level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-  
+
 	def _log_debug(self, message):
 		"""Log debug messages if debugging is enabled."""
 		if self.enable_debug:
@@ -95,85 +93,91 @@ class B2Message:
 	def _parse_b2_message(self):
 		# Header processing
 		# Position 0: SOH
-		byte_index = 0
-		if self.raw_data[byte_index] != SOH:
+		raw_index = 0
+		if self.raw_data[raw_index] != SOH:
 			raise ValueError("Expected SOH at start of message")
 		self._log_debug(f"Found SOH")
+		raw_data_len = len(self.raw_data)
 		
 		# Position 1: One byte length field which covers the SUBJECT, a NUL, an ASCII LENGTH field called
 		# the OFFSET, and another NUL
-  		byte_index += 1
-		self.header_length = self.raw_data[byte_index]
+		raw_index += 1
+		self.header_length = self.raw_data[raw_index]
 		self._log_debug(f"Header length is <{self.header_length}>")
 
 		# Position 2..2+Read subject
-		byte_index += 1
-		end_subject = self.raw_data.index(NUL, byte_index)
-		self.subject = self.raw_data[byte_index:end_subject].decode("ascii")
+		raw_index += 1
+		end_subject = self.raw_data.index(NUL, raw_index)
+		self.subject = self.raw_data[raw_index:end_subject].decode("ascii")
 		self._log_debug(f"Subject is <{self.subject}>")
-  
+
 		# Another NUL
-		byte_index = end_subject
-		if self.raw_data[index] != NUL:
+		raw_index = end_subject
+		if self.raw_data[raw_index] != NUL:
 			raise ValueError("Expected NUL after subject field")
 
 		# Read offset
-		byte_index += 1
-		end_offset = self.raw_data.index(NUL, index)
-		offset_str = self.raw_data[index:end_offset].decode("ascii")
+		raw_index += 1
+		end_offset = self.raw_data.index(NUL, raw_index)
+		offset_str = self.raw_data[raw_index:end_offset].decode("ascii")
 		self.offset = int(offset_str)
 		self._log_debug(f"Offset is {self.offset}")
-  
-		byte_index = end_offset + 2  # Skip over the NUL
+
+		raw_index = end_offset + 1  # Skip over the NUL
 		compressed_data = bytearray()
+		compressed_index = 0
 		if self.offset != 0:
-			if self.raw_data[byte_index] != STX or self.raw_data[byte_index+1] != 0x06:
+			if self.raw_data[raw_index] != STX or self.raw_data[raw_index+1] != 0x06:
 				raise ValueError("Expected STX 0x06 before lead-bytes")
-			byte_index += 2
-			compressed_data[0:6] = self.raw_data[byte_index:byte_index+6]
-			byte_index += 6
-			compressed_data_index = 6
+			raw_index += 2
+			compressed_data[0:6] = self.raw_data[raw_index:raw_index+6]
+			raw_index += 6
+			compressed_index += 6
 
 		# Accumulate data in blocks:
 		# <STX><LEN><BYTES>
 		# <STX><LEN><BYTES>
 		# ...
 		# <EOT><CHECKSUM>
-		more_data = True
-		while more_data:
-			# Is it a data block?
-			if self.raw_data[byte_index] == STX:
-				byte_index += 1
-				block_length = raw_data[byte_index]
+		while raw_index < raw_data_len:
+			if self.raw_data[raw_index] == STX:
+				# It is a data block
+				raw_index += 1
+				block_length = self.raw_data[raw_index]
 				# with enough space left in the raw data?
-				if byte_index + block_length > len(self.raw_data):
-					raise ValueError("Malformed message block -- too short")
-				compressed_data[compressed_data_index,compressed_data_index+block_length] = self.raw_data[byte_index:byte_index+block_length]
-			# Is it a checksum block?
-   			elif:
-				self.raw_data[byte_index] == EOT:
-				byte_index += 1
+				raw_index += 1
+				last_raw_index = raw_index + block_length
+				last_compressed_index = compressed_index + block_length
+				if last_raw_index > raw_data_len:
+					raise ValueError(f"Malformed message block -- too short -- expected {last_raw_index} got {raw_data_len}")
+				compressed_data[compressed_index,last_compressed_index] = self.raw_data[raw_index:last_raw_index]
+				compressed_index = last_compressed_index
+				raw_index = last_raw_index
+    			self._log_debug(f"Captured block of length {block_length}")
+			elif self.raw_data[raw_index] == EOT:
+				# It is a checksum block
+				raw_index += 1
 				# that appears at the very end of the raw data?
-    			if byte_index != len(self.raw_data):
+				if raw_index != raw_data_len:
 					raise ValueError("Malformed checksum block")
-				self.transmitted_checksum = self.raw_data[byte_index]
+				self.transmitted_checksum = self.raw_data[raw_index]
 				calculated_checksum = self._calculate_checksum(compressed_data)
 				if self.transmitted_checksum != calculated_checksum:
 					raise ValueError(f"Checksum mismatch: expected {calculated_checksum:02X}, got {self.transmitted_checksum:02X}")
 			else:
-				raise ValueError("Malformed message block -- not STX or EOT")
+				raise ValueError(f"Malformed message block at index {raw_index} -- expected STX or EOT, got {self.raw_data[raw_index]:02X}")
 
-    def _split_body_and_attachments(self):
-        """Split the body from binary attachments in the message."""
-        # Assuming binary attachments are base64-encoded and follow a specific delimiter in the message.
-        # This part needs to be adjusted based on how the body and attachments are structured in the message.
-        body = ""
-        attachments = ""
+	def _split_body_and_attachments(self):
+		"""Split the body from binary attachments in the message."""
+		# Assuming binary attachments are base64-encoded and follow a specific delimiter in the message.
+		# This part needs to be adjusted based on how the body and attachments are structured in the message.
+		body = ""
+		attachments = ""
 
-        # For simplicity, let's assume attachments are marked with a specific delimiter like '[ATTACHMENT]'.
-        if '[ATTACHMENT]' in self.body_and_attachments:
-            self.body, self.attachments = self.body_and_attachments.split('[ATTACHMENT]', 1)
-        else:
-            self.body = self.body_and_attachments  # No attachments, all is body
+		# For simplicity, let's assume attachments are marked with a specific delimiter like '[ATTACHMENT]'.
+		if '[ATTACHMENT]' in self.body_and_attachments:
+			self.body, self.attachments = self.body_and_attachments.split('[ATTACHMENT]', 1)
+		else:
+			self.body = self.body_and_attachments  # No attachments, all is body
 
-        return self.body, self.attachments
+		return self.body, self.attachments
