@@ -10,8 +10,6 @@ __status__ = "Experimental"
 
 import os
 import datetime
-import base64
-import zlib
 import logging
 from classes.B2Message import B2Message 
 
@@ -29,11 +27,6 @@ class WinlinkMailMessage:
         self.message_id = message_id  # Unique identifier for the message
         self.uncompressed_size = uncompressed_size  # Uncompressed size of the message
         self.compressed_size = compressed_size  # Compressed size of the message
-        self.raw_data = None  # To store the raw data received
-        self.headers = None
-        self.body_and_attachments = None
-        self.body = None
-        self.attachments = None
         self.b2 = None
 
         if not os.path.exists(MAILBOX_FOLDER_NAME):
@@ -57,36 +50,13 @@ class WinlinkMailMessage:
         if self.enable_debug:
             self.logger.debug(message)
 
-    def _split_body_and_attachments(self):
-        """Split the body from binary attachments in the message."""
-        # Assuming binary attachments are base64-encoded and follow a specific delimiter in the message.
-        # This part needs to be adjusted based on how the body and attachments are structured in the message.
-        body = ""
-        attachments = ""
-
-        # For simplicity, let's assume attachments are marked with a specific delimiter like '[ATTACHMENT]'.
-        if '[ATTACHMENT]' in self.body_and_attachments:
-            self.body, self.attachments = self.body_and_attachments.split('[ATTACHMENT]', 1)
-        else:
-            self.body = self.body_and_attachments  # No attachments, all is body
-
-        return self.body, self.attachments
-
     def record_messsage_data(self, data):
-        """Decode the raw .b2f data (base64 + zlib), split into headers, body, and binary, and save them."""
+        """Capture the raw data and decode it."""
         try:
-            self.raw_data = data
-            self.b2 = B2Message(self.raw_data, enable_debug=self.enable_debug)
-
+            # Decode the raw data
+            self.b2 = B2Message(data, enable_debug=self.enable_debug)
             self._log_debug(f"B2 subject: {self.b2.subject}")
-
             self._save_raw_data_to_file()
-            decoded_data = base64.b64decode(self.raw_data)
-            decompressed_data = zlib.decompress(decoded_data)
-            decoded_message = decompressed_data.decode('ascii')
-            self.headers, self.body_and_attachments = decoded_message.split("\n\n", 1)
-            self.body, self.attachments = self._split_body_and_attachments()
-            
         except Exception as e:
             self._log_debug(f"Error decoding and splitting message: {e}")
 
@@ -104,7 +74,7 @@ class WinlinkMailMessage:
         try:
             raw_filename = f"{self.filename}.b2f"
             with open(raw_filename, 'wb') as f:
-                f.write(self.raw_data)
+                f.write(self.b2.raw_data)
             self._log_debug(f"Raw data saved to {raw_filename}")
         except Exception as e:
             self._log_debug(f"Error saving raw data: {e}")
@@ -115,7 +85,7 @@ class WinlinkMailMessage:
             try:
                 headers_filename = f"{self.filename}-headers.txt"
                 with open(headers_filename, 'w') as f:
-                    f.write(self.headers)
+                    f.write(b2.headers)
                 self._log_debug(f"Headers saved to {headers_filename}")
             except Exception as e:
                 self._log_debug(f"Error saving headers: {e}")
@@ -128,7 +98,7 @@ class WinlinkMailMessage:
             try:
                 body_filename = f"{self.filename}-body.txt"
                 with open(body_filename, 'w') as f:
-                    f.write(self.body)
+                    f.write(b2.body)
                 self._log_debug(f"Body saved to {body_filename}")
             except Exception as e:
                 self._log_debug(f"Error saving body: {e}")
@@ -138,7 +108,7 @@ class WinlinkMailMessage:
     def _save_attachments_to_files(self):
         """Save any binary attachments to separate .bin files."""
         try:
-            if self.attachments is not None:
+            if b2.attachments is not None:
                 # For each attachment, we decode and save it as a binary file
                 attachment_data = base64.b64decode(self.attachments)  # Decode base64-encoded attachment
                 attachment_filename = f"{self.filename}-attachment.bin"

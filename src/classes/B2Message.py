@@ -37,6 +37,8 @@ __status__ = "Experimental"
 
 import struct
 import logging
+import base64
+import zlib
 
 SOH = 0x01
 NUL = 0x00
@@ -53,12 +55,27 @@ class B2Message:
 		self.transmitted_checksum = None
 		self.lead_bytes = None
 		self.compressed_data = None
+		self.headers = None
+		self.body = None
+		self.attachments = None
 
 		# Set up logging
 		self.logger = logging.getLogger(__name__)
 		self._setup_logging()
 
 		self._parse_b2_message()
+  
+  
+  
+		# move this someplace better
+		decoded_data = base64.b64decode(self.raw_data)
+		decompressed_data = zlib.decompress(decoded_data)
+		decoded_message = decompressed_data.decode('ascii')
+		self.headers, self.body_and_attachments = decoded_message.split("\n\n", 1)
+		self.body, self.attachments = self._split_body_and_attachments()
+  
+  
+  
 
 	def _setup_logging(self):
 		"""Set up logging configuration."""
@@ -76,71 +93,87 @@ class B2Message:
 		return ((checksum * -1) & 0xFF)
 
 	def _parse_b2_message(self):
-		index = 0
-		if self.raw_data[index] != SOH:
+		# Header processing
+		# Position 0: SOH
+		byte_index = 0
+		if self.raw_data[byte_index] != SOH:
 			raise ValueError("Expected SOH at start of message")
-		index += 1
-
 		self._log_debug(f"Found SOH")
+		
+		# Position 1: One byte length field which covers the SUBJECT, a NUL, an ASCII LENGTH field called
+		# the OFFSET, and another NUL
+  		byte_index += 1
+		self.header_length = self.raw_data[byte_index]
+		self._log_debug(f"Header length is <{self.header_length}>")
 
-		# Length of subject + offset string + 2 (for 2 NULs)
-		self.header_length = self.raw_data[index]
-		index += 1
-
-		self._log_debug(f"Header length is {self.header_length}")
-
-		# Read subject
-		end_subject = self.raw_data.index(NUL, index)
-		self.subject = self.raw_data[index:end_subject].decode("ascii")
-		index = end_subject + 1
-
+		# Position 2..2+Read subject
+		byte_index += 1
+		end_subject = self.raw_data.index(NUL, byte_index)
+		self.subject = self.raw_data[byte_index:end_subject].decode("ascii")
 		self._log_debug(f"Subject is <{self.subject}>")
+  
+		# Another NUL
+		byte_index = end_subject
+		if self.raw_data[index] != NUL:
+			raise ValueError("Expected NUL after subject field")
 
 		# Read offset
+		byte_index += 1
 		end_offset = self.raw_data.index(NUL, index)
 		offset_str = self.raw_data[index:end_offset].decode("ascii")
 		self.offset = int(offset_str)
-		index = end_offset + 2  # Skip over the NUL
-
 		self._log_debug(f"Offset is {self.offset}")
-
-		lead_bytes_local = b''
+  
+		byte_index = end_offset + 2  # Skip over the NUL
+		compressed_data = bytearray()
 		if self.offset != 0:
-			if self.raw_data[index] != STX or self.raw_data[ptr+1] != 0x06:
+			if self.raw_data[byte_index] != STX or self.raw_data[byte_index+1] != 0x06:
 				raise ValueError("Expected STX 0x06 before lead-bytes")
-			ptr += 2
-			lead_bytes_local = self.raw_data[index:index+6]
-			index += 6
-   
-		if self.raw_data[index] != STX:
-			raise ValueError("Expected STX at start of the compressed message")
-		index += 1
-  
-		block_length = int(self.raw_data[index])
-		index +=1
+			byte_index += 2
+			compressed_data[0:6] = self.raw_data[byte_index:byte_index+6]
+			byte_index += 6
+			compressed_data_index = 6
 
-		# Parse data blocks
-		compressed_data_local = bytearray()
-  
-		while index < len(self.raw_data):
-			byte = self.raw_data[index]
-			if byte == STX:
-				ptr += 1
-				block_length = self.raw_data[index]
-				ptr += 1
-				block_data = self.raw_data[ptr:ptr+block_length]
-				compressed_data_local.extend(block_data)
-				ptr += block_length
-			elif byte == EOT:
-				ptr += 1
-				self.transmitted_checksum = self.raw_data[ptr]
-				calculated_checksum = self._calculate_checksum(compressed_data_local)
+		# Accumulate data in blocks:
+		# <STX><LEN><BYTES>
+		# <STX><LEN><BYTES>
+		# ...
+		# <EOT><CHECKSUM>
+		more_data = True
+		while more_data:
+			# Is it a data block?
+			if self.raw_data[byte_index] == STX:
+				byte_index += 1
+				block_length = raw_data[byte_index]
+				# with enough space left in the raw data?
+				if byte_index + block_length > len(self.raw_data):
+					raise ValueError("Malformed message block -- too short")
+				compressed_data[compressed_data_index,compressed_data_index+block_length] = self.raw_data[byte_index:byte_index+block_length]
+			# Is it a checksum block?
+   			elif:
+				self.raw_data[byte_index] == EOT:
+				byte_index += 1
+				# that appears at the very end of the raw data?
+    			if byte_index != len(self.raw_data):
+					raise ValueError("Malformed checksum block")
+				self.transmitted_checksum = self.raw_data[byte_index]
+				calculated_checksum = self._calculate_checksum(compressed_data)
 				if self.transmitted_checksum != calculated_checksum:
 					raise ValueError(f"Checksum mismatch: expected {calculated_checksum:02X}, got {self.transmitted_checksum:02X}")
-
-				self.lead_bytes = lead_bytes_local,
-				self.compressed_data = bytes(compressed_data_local)
 			else:
-				raise ValueError(f"Unexpected byte {byte:02X} at position {ptr}")
+				raise ValueError("Malformed message block -- not STX or EOT")
 
-		raise ValueError("EOT block not found")
+    def _split_body_and_attachments(self):
+        """Split the body from binary attachments in the message."""
+        # Assuming binary attachments are base64-encoded and follow a specific delimiter in the message.
+        # This part needs to be adjusted based on how the body and attachments are structured in the message.
+        body = ""
+        attachments = ""
+
+        # For simplicity, let's assume attachments are marked with a specific delimiter like '[ATTACHMENT]'.
+        if '[ATTACHMENT]' in self.body_and_attachments:
+            self.body, self.attachments = self.body_and_attachments.split('[ATTACHMENT]', 1)
+        else:
+            self.body = self.body_and_attachments  # No attachments, all is body
+
+        return self.body, self.attachments
