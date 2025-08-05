@@ -98,6 +98,7 @@ class B2Message:
 			raise ValueError("Expected SOH at start of message")
 		self._log_debug(f"Found SOH")
 		raw_data_len = len(self.raw_data)
+		self._log_debug(f"Handling raw data block of length {raw_data_len}")
 		
 		# Position 1: One byte length field which covers the SUBJECT, a NUL, an ASCII LENGTH field called
 		# the OFFSET, and another NUL
@@ -123,7 +124,7 @@ class B2Message:
 		self.offset = int(offset_str)
 		self._log_debug(f"Offset is {self.offset}")
 
-		raw_index = end_offset + 1  # Skip over the NUL
+		raw_index = end_offset + 1  # end_offset points to NUL; skip over it
 		compressed_data = bytearray()
 		compressed_index = 0
 		if self.offset != 0:
@@ -141,19 +142,21 @@ class B2Message:
 		# <EOT><CHECKSUM>
 		while raw_index < raw_data_len:
 			if self.raw_data[raw_index] == STX:
-				# It is a data block
+				self._log_debug(f"Found STX at index {raw_index}")
 				raw_index += 1
 				block_length = self.raw_data[raw_index]
+				self._log_debug(f"Found LENGTH of {block_length} at index {raw_index}")
 				# with enough space left in the raw data?
 				raw_index += 1
 				last_raw_index = raw_index + block_length
 				last_compressed_index = compressed_index + block_length
 				if last_raw_index > raw_data_len:
 					raise ValueError(f"Malformed message block -- too short -- expected {last_raw_index} got {raw_data_len}")
+				self._log_debug(f"Expecting compressed block of {block_length} bytes at index {raw_index}")
 				compressed_data[compressed_index,last_compressed_index] = self.raw_data[raw_index:last_raw_index]
 				compressed_index = last_compressed_index
 				raw_index = last_raw_index
-    			self._log_debug(f"Captured block of length {block_length}")
+				self._log_debug(f"Captured block of length {block_length}")
 			elif self.raw_data[raw_index] == EOT:
 				# It is a checksum block
 				raw_index += 1
