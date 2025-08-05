@@ -15,7 +15,7 @@ from classes.WinlinkConnection import WinlinkConnection
 LISTEN_IP = "0.0.0.0"
 LISTEN_PORT = 8772
 SIMULTANEOUS_CONNECTION_MAX = 5
-CONNECTION_READ_TIMEOUT_SECONDS = 5
+CONNECTION_READ_TIMEOUT_SECONDS = 1
 
 
 class WinlinkServer:

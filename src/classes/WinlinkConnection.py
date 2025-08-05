@@ -24,11 +24,9 @@ LOGIN_SUCCESS = "LOGIN_SUCCESS"
 CLIENT_REQUEST = "CLIENT_REQUEST"
 CLOSE_CONNECTION = "CLOSE_CONNECTION"
 
-TIMEOUT_IN_SECONDS = 5
-
 
 class WinlinkConnection:
-	def __init__(self, connection, address, timeout=TIMEOUT_IN_SECONDS, enable_debug=False):
+	def __init__(self, connection, address, timeout, enable_debug=False):
 		"""Initialize the connection handler and encapsulate socket handling."""
 		self.connection = connection
 		self.address = address

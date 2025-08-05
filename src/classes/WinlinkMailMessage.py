@@ -78,11 +78,11 @@ class WinlinkMailMessage:
 
 	def _save_headers_to_file(self):
 		"""Save the headers to a .txt file."""
-		if b2.headers is not None:
+		if self.b2.headers is not None:
 			try:
 				headers_filename = f"{self.filename}-headers.txt"
 				with open(headers_filename, 'w') as f:
-					f.write(b2.headers)
+					f.write(self.b2.headers)
 				self._log_debug(f"Headers saved to {headers_filename}")
 			except Exception as e:
 				self._log_debug(f"Error saving headers: {e}")
@@ -91,11 +91,11 @@ class WinlinkMailMessage:
 
 	def _save_body_to_file(self):
 		"""Save the body to a .txt file."""
-		if b2.body is not None:
+		if self.b2.body is not None:
 			try:
 				body_filename = f"{self.filename}-body.txt"
 				with open(body_filename, 'w') as f:
-					f.write(b2.body)
+					f.write(self.b2.body)
 				self._log_debug(f"Body saved to {body_filename}")
 			except Exception as e:
 				self._log_debug(f"Error saving body: {e}")
@@ -105,9 +105,9 @@ class WinlinkMailMessage:
 	def _save_attachments_to_files(self):
 		"""Save any binary attachments to separate .bin files."""
 		try:
-			if b2.attachments is not None:
+			if self.b2.attachments is not None:
 				# For each attachment, we decode and save it as a binary file
-				attachment_data = base64.b64decode(b2.attachments)  # Decode base64-encoded attachment
+				attachment_data = base64.b64decode(self.b2.attachments)  # Decode base64-encoded attachment
 				attachment_filename = f"{self.filename}-attachment.bin"
 				with open(attachment_filename, 'wb') as f:
 					f.write(attachment_data)

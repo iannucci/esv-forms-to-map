@@ -66,15 +66,6 @@ class B2Message:
 		self._parse_b2_message()
 
 
-
-		# move this someplace better
-		decoded_data = base64.b64decode(self.raw_data)
-		decompressed_data = zlib.decompress(decoded_data)
-		decoded_message = decompressed_data.decode('ascii')
-		self.headers, self.body_and_attachments = decoded_message.split("\n\n", 1)
-		self.body, self.attachments = self._split_body_and_attachments()
-
-
 	def _setup_logging(self):
 		"""Set up logging configuration."""
 		log_level = logging.DEBUG if self.enable_debug else logging.INFO
@@ -165,10 +156,17 @@ class B2Message:
 					raise ValueError(f"Checksum mismatch: expected 0x{calculated_checksum:02X}, got 0x{self.transmitted_checksum:02X}")
 				else:
 					self._log_debug(f"Checksum match")
-					return
+					break
 			else:
 				print(f'{self.raw_data[raw_index-1]:02X} {self.raw_data[raw_index]:02X}')
 				raise ValueError(f"Malformed message block at index {raw_index} -- expected STX or EOT, got 0x{self.raw_data[raw_index]:02X}")
+
+		decoded_data = base64.b64decode(self.compressed_data)
+		decompressed_data = zlib.decompress(decoded_data)
+		decoded_message = decompressed_data.decode('ascii')
+		print(decoded_message)
+		self.headers, self.body_and_attachments = decoded_message.split("\n\n", 1)
+		self.body, self.attachments = self._split_body_and_attachments()
 
 	def _split_body_and_attachments(self):
 		"""Split the body from binary attachments in the message."""
