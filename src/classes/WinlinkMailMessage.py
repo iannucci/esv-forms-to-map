@@ -32,8 +32,8 @@ class WinlinkMailMessage:
 		if not os.path.exists(MAILBOX_FOLDER_NAME):
 			os.makedirs(MAILBOX_FOLDER_NAME)
 
-		julian_date = self.time_created.strftime("%Y%m%d-%H%M%S")
-		self.filename = f"{MAILBOX_FOLDER_NAME}/{julian_date}-{self.message_id}"
+		# julian_date = self.time_created.strftime("%Y%m%d-%H%M%S")
+		self.filename = f"{MAILBOX_FOLDER_NAME}/{self.message_id}"
 
 		# Set up logging
 		self.logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ class WinlinkMailMessage:
 	def record_messsage_data(self, data):
 		"""Capture the raw data and decode it."""
 		# Decode the raw data
-		self.b2 = B2Message(data, self.uncompressed_size, self.compressed_size, enable_debug=self.enable_debug)
+		self.b2 = B2Message(self.message_id, data, self.uncompressed_size, self.compressed_size, enable_debug=self.enable_debug)
 		self._log_debug(f"B2 subject: {self.b2.subject}")
 		self._save_raw_data_to_file()
 

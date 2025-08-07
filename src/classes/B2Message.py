@@ -45,7 +45,8 @@ STX = 0x02
 EOT = 0x04
 
 class B2Message:
-	def __init__(self, raw_data, uncompressed_size, compressed_size, enable_debug=False):
+	def __init__(self, message_id, raw_data, uncompressed_size, compressed_size, enable_debug=False):
+		self.message_id = message_id  # for debugging
 		self.enable_debug = enable_debug
 		self.raw_data = raw_data
 		self.header_length = None
@@ -181,8 +182,8 @@ class B2Message:
 
 		try:
 			# <DEBUGGING>
-			with open("compressed_data.Z", 'wb') as f:
-				f.write(self.compressed_data[6:])  # Skip over the CRC-16 and the 4 byte length field
+			with open(f"go/testdata/{self.message_id}-with-crc16.Z", 'wb') as f:
+				f.write(self.compressed_data)  # Do not skip over the CRC-16 and the 4 byte length field
 			# </DEBUGGING>
 
 
