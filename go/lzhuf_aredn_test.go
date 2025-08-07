@@ -11,5 +11,6 @@ func TestDecompressFile(t *testing.T) {
 		t.Errorf("Failed to decode file %s", filename)
 	} else {
 		t.Logf("Successfully decoded file %s, data length: %d bytes", filename, len(data))
+		t.Logf("Decompressed data: %s", string(data))
 	}
 }
