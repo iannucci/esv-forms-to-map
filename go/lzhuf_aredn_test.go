@@ -5,7 +5,7 @@ import (
 )
 
 func TestDecompressFile(t *testing.T) {
-	filename := "G5QTMOJYMY4W-with-crc16.Z"
+	filename := "G5QTMOJYMY4W-with-crc16"
 	data := DecompressFile(filename)
 	if data == nil {
 		t.Errorf("Failed to decode file %s", filename)

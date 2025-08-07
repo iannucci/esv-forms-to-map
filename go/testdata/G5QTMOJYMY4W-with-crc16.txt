@@ -1,0 +1,10 @@
+Mid: G5QTMOJYMY4W
+Body: 0
+Date: 2025/08/07 15:45
+From: W6EI-2
+Mbo: 
+Subject: Test
+To: W6EI-3
+Type: Private
+X-Location: 37.420288N, 122.120636W (GPS)
+
