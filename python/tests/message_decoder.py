@@ -12,7 +12,7 @@ import sys
 import os
 
 this_path = os.path.dirname(__file__)
-src_path = os.path.abspath(os.path.join(this_path, '../src'))
+src_path = os.path.abspath(os.path.join(this_path, '../'))
 sys.path.insert(0, src_path)
 
 import datetime
