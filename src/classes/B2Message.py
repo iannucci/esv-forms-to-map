@@ -37,8 +37,7 @@ __status__ = "Experimental"
 
 import struct
 import logging
-import base64
-import zlib
+from classes.LZW import lzw_decompress
 
 SOH = 0x01
 NUL = 0x00
@@ -46,18 +45,19 @@ STX = 0x02
 EOT = 0x04
 
 class B2Message:
-	def __init__(self, raw_data, enable_debug=False):
+	def __init__(self, raw_data, uncompressed_size, compressed_size, enable_debug=False):
 		self.enable_debug = enable_debug
 		self.raw_data = raw_data
 		self.header_length = None
 		self.subject = None
 		self.offset = None
 		self.transmitted_checksum = None
-		self.lead_bytes = None
 		self.compressed_data = bytearray()
 		self.headers = None
 		self.body = None
 		self.attachments = None
+		self.uncompressed_size = uncompressed_size
+		self.compressed_size = compressed_size
 
 		# Set up logging
 		self.logger = logging.getLogger(__name__)
@@ -121,7 +121,8 @@ class B2Message:
 			if self.raw_data[raw_index] != STX or self.raw_data[raw_index+1] != 0x06:
 				raise ValueError("Expected STX 0x06 before lead-bytes")
 			raw_index += 2
-			self.compressed_data[0:6] = self.raw_data[raw_index:raw_index+6]
+			self.compressed_data[0:6] = self.raw_data[raw_index:raw_index+6] # these are the "lead bytes" and this probably
+																			 # NOT the right way to handle them
 			raw_index += 6
 			compressed_index += 6
 
@@ -161,12 +162,38 @@ class B2Message:
 				print(f'{self.raw_data[raw_index-1]:02X} {self.raw_data[raw_index]:02X}')
 				raise ValueError(f"Malformed message block at index {raw_index} -- expected STX or EOT, got 0x{self.raw_data[raw_index]:02X}")
 
-		decoded_data = base64.b64decode(self.compressed_data)
-		decompressed_data = zlib.decompress(decoded_data)
-		decoded_message = decompressed_data.decode('ascii')
-		print(decoded_message)
-		self.headers, self.body_and_attachments = decoded_message.split("\n\n", 1)
-		self.body, self.attachments = self._split_body_and_attachments()
+		# The first two bytes of the compressed data are a CRC-16.
+		# The next four bytes are the overall length of the decompressed message in little endian format
+		# e.g., DF 05 00 00 --> 1503 bytes which should match the FC statement:
+		# FC EM MZRGKMJWMU2G 1503 908 0
+
+		compressed_data_len = len(self.compressed_data)  # Data begins after the <STX><LEN> and ends before <EOT><CHECKSUM>
+		if compressed_data_len == self.compressed_size:
+			self._log_debug(f"Compressed message size matches proposal: {compressed_data_len}")
+		else:
+			raise ValueError(f"Compressed message size {compressed_data_len} does not match proposal {self.compressed_size}")
+
+		uncompressed_data_len = int.from_bytes(self.compressed_data[2:6], byteorder='little')
+		if uncompressed_data_len == self.uncompressed_size:
+			self._log_debug(f"Uncompressed message size matches proposal: {uncompressed_data_len}")
+		else:
+			raise ValueError(f"Uncompressed message size {uncompressed_data_len} does not match proposal {self.uncompressed_size}")
+
+		try:
+			# <DEBUGGING>
+			with open("compressed_data.Z", 'wb') as f:
+				f.write(self.compressed_data[6:])  # Skip over the CRC-16 and the 4 byte length field
+			# </DEBUGGING>
+
+
+			
+			decompressed_data = lzw_decompress(self.compressed_data[6:])
+			decoded_data = decompressed_data.decode('ascii', errors='replace')
+			print("Decompressed:", decoded_data)
+			self.headers, self.body_and_attachments = decoded_data.split("\n\n", 1)
+			self.body, self.attachments = self._split_body_and_attachments()
+		except Exception as e:
+			self.logger.error(f"Decompression failed: {e}")
 
 	def _split_body_and_attachments(self):
 		"""Split the body from binary attachments in the message."""
