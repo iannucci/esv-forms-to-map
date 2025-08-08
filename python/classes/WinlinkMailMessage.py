@@ -50,10 +50,14 @@ class WinlinkMailMessage:
 		if self.enable_debug:
 			self.logger.debug(message)
 
-	def record_messsage_data(self, data):
+	def capture(self, raw_data) -> int:
 		"""Capture the raw data and decode it."""
-		# Decode the raw data
-		self.b2 = B2Message(self.message_id, data, self.uncompressed_size, self.compressed_size, enable_debug=self.enable_debug)
+		# Record the raw data
+		self.b2 = B2Message(self.message_id, raw_data, self.uncompressed_size, self.compressed_size, enable_debug=self.enable_debug)
+
+	# Returns the index of the next unprocessed byte in raw_data
+	def parse(self) -> int:
+		return self.b2.parse()  # Returns the index of the next unprocessed byte in raw_data
 		# self._log_debug(f"B2 subject: {self.b2.subject}")
 		# self._save_raw_data_to_file()
 

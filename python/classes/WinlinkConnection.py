@@ -24,6 +24,8 @@ LOGIN_SUCCESS = "LOGIN_SUCCESS"
 CLIENT_REQUEST = "CLIENT_REQUEST"
 CLOSE_CONNECTION = "CLOSE_CONNECTION"
 
+MAILBOX_FOLDER_NAME = "mailbox"
+
 
 class WinlinkConnection:
 	def __init__(self, connection, address, timeout, enable_debug=False):
@@ -97,7 +99,8 @@ class WinlinkConnection:
 		try:
 			if self.connection:
 				self.connection.sendall(data.encode())
-				self._log_debug(f"Sent data: {data}")
+				if len(data) > 0:
+					self._log_debug(f"Sent: <{data.strip()}>")
 		except Exception as e:
 			self.logger.error(f"Error sending data: {e}")
 
@@ -121,7 +124,7 @@ class WinlinkConnection:
 			response_str = response_str.rstrip("\r")  # Strip the carriage return
 
 			# Debug: Log the received data for inspection
-			self._log_debug(f"Received data: {response_str}")
+			self._log_debug(f"Received: <{response_str}>")
 
 			return response_str
 		except socket.timeout:
@@ -130,19 +133,19 @@ class WinlinkConnection:
 
 	def _handle_start(self):
 		"""Handle the start state."""
-		self._log_debug("Handling START state")
+		self._log_debug("START state")
 		self.state = CONNECTED  # Move to CONNECTED when starting the connection
 		self.next_state = CONNECTED
 
 	def _handle_connected(self):
 		"""Handle the connected state."""
-		self._log_debug("Handling CONNECTED state")
+		self._log_debug("CONNECTED state")
 		# The connection is already established, so move to CALLSIGN_ENTRY
 		self.next_state = CALLSIGN_ENTRY
 
 	def _handle_callsign_entry(self):
 		"""Process the callsign."""
-		self._log_debug("Handling CALLSIGN_ENTRY state")
+		self._log_debug("CALLSIGN_ENTRY state")
 		callsign = self.wait_for_input("Callsign :\r")  # Wait for client input
 
 		if callsign:
@@ -153,7 +156,7 @@ class WinlinkConnection:
 
 	def _handle_password_validation(self):
 		"""Process the password."""
-		self._log_debug("Handling PASSWORD_VALIDATION state")
+		self._log_debug("PASSWORD_VALIDATION state")
 		# Prompt for password and wait for input
 		password = self.wait_for_input("Password :\r")
 		
@@ -165,7 +168,7 @@ class WinlinkConnection:
 
 	def _handle_login_success(self):
 		"""Handle successful login."""
-		self._log_debug("Handling LOGIN_SUCCESS state")
+		self._log_debug("LOGIN_SUCCESS state")
 		
 		# Send '[AREDN_BRIDGE-1.0-B2F$]' followed by a carriage return
 		self.send_data("[AREDN_BRIDGE-1.0-B2F$]\r")
@@ -177,56 +180,52 @@ class WinlinkConnection:
 
 	def _handle_client_request(self):
 		"""Handle the client's request after login."""
-		self._log_debug("Handling CLIENT_REQUEST state")
+		self._log_debug("CLIENT_REQUEST state")
 		request = self.wait_for_input("")  # Wait for client's request and strip trailing carriage return
 
 		if request:
-			if request.startswith("FC"):  # Now handle 'FC' instead of ';FC:'
-				self._handle_message_proposal(request)  # Call _handle_message_proposal for FC messages
+			if request.startswith("FC"):  
+				self._handle_message_proposal(request)  
 			elif request.startswith(";FW:"):
-				self._handle_forward_message(request)  # Call _handle_forward_message for FW messages
+				self._handle_forward_message(request)  
 			elif request.startswith(";PQ:"):
-				self._handle_authentication_challenge(request)  # Call _handle_authentication_challenge for PQ messages
+				self._handle_authentication_challenge(request)  
 			elif request.startswith(";PM:"):
-				self._handle_pending_message(request)  # Call _handle_pending_message for PM messages
-			elif re.match(r"^\[.*\]$", request):  # Use regex to match bracketed messages
-				self._handle_sid(request)  # Call _parse_sid for bracketed messages
+				self._handle_pending_message(request)  
+			elif re.match(r"^\[.*\]$", request):  
+				self._handle_sid(request)  
 			elif request.startswith("; "):
-				self._handle_comment(request)  # Call _handle_comment for comment messages
+				self._handle_comment(request)  
 			elif request.startswith("F>"):
-				self._handle_end_of_proposal(request)  # Call _handle_end_of_proposal for F> messages
-			elif request.startswith("FF"):  # Handle FF messages
-				self._handle_no_messages(request)  # Call _handle_no_messages for FF messages
+				self._handle_end_of_proposals(request)  
+			elif request.startswith("FF"):  
+				self._handle_no_messages(request)  
 			else:
 				self.next_state = CLOSE_CONNECTION  # Close connection if request type is unrecognized
-
 		else:
 			self.next_state = CLOSE_CONNECTION  # Close the connection if no valid request
 
 	def _handle_comment(self, message):
 		"""Handle comment messages that begin with '; '."""
-		self._log_debug(f"Handling comment message: {message}")
-		
-		# Simply process the comment and continue without state change.
-		self._log_debug(f"Comment received: {message}")
+		self._log_debug(f"Comment message: {message}")
 
 	def _handle_forward_message(self, message):
 		"""Handle forward messages that begin with ';FW:'."""
-		self._log_debug(f"Handling forward message: {message}")
+		self._log_debug(f"Forward message: {message}")
 		# Implementation for handling forward message
 		# (Extract forward_login_callsign, pickup_callsigns, etc.)
 
 	def _handle_authentication_challenge(self, message):
-		self._log_debug(f"Handling authentication challenge: {message}")
+		self._log_debug(f"Authentication challenge: {message}")
 		pass
 
 	def _handle_pending_message(self, message):
-		self._log_debug(f"Handling pending message: {message}")
+		self._log_debug(f"Pending message: {message}")
 		pass
 
 	def _handle_sid(self, message):
 		"""Parse the message that starts with '[' and ends with ']'. Extract author, version, and feature list."""
-		self._log_debug(f"Handling SID message: {message}")
+		self._log_debug(f"SID message: {message}")
 		
 		# Remove the brackets and split by '-'
 		content = message[1:-1]  # Strip the surrounding brackets
@@ -246,8 +245,8 @@ class WinlinkConnection:
 
 
 	def _handle_message_proposal(self, message):
-		"""Handle messages that begin with 'FC'."""
-		self._log_debug(f"Handling message proposal: {message}")
+		"""Handle 'FC' case -- message proposal"""
+		self._log_debug(f"Message proposal: {message}")
 		
 		# Extracting message type, message ID, uncompressed size, and compressed size
 		parts = message.split()
@@ -268,72 +267,107 @@ class WinlinkConnection:
 			# Handle invalid message format
 			self._log_debug("Invalid message proposal format")
 
-	def _handle_end_of_proposal(self, message):
-		"""Handle messages that begin with 'F>'."""
-		self._log_debug(f"Handling end of proposal message: {message}")
+	def _handle_end_of_proposals(self, message):
+		"""Handle 'F>' case"""
+		self._log_debug(f"End of proposals")
 		
-		# Process messages in the queue in FIFO order
 		try:
 			pending_messages = len(self.message_queue.queue)
 			if pending_messages > 0:
 				c = 'Y'
-				self.send_data(f"FS {c * pending_messages}\r")  # Send the prompt to the client
-			while not self.message_queue.empty():
-				message = self.message_queue.get()  # Get the first message in the queue
-				self._log_debug(f"Processing message ID: {message.message_id}")
-				
-				# Await up to uncompressed_size bytes of data from the client
-				# self.send_data("FS Y\r")  # Send the prompt to the client
-				data = self._wait_for_data(message.uncompressed_size)
-				self._log_debug(f"Received {len(data)} bytes from client")
-				
-				# There may have been multiple messages sent.  Break them apart and save them.
-				message.record_messsage_data(data)
-				
-				# Save the raw data to a file 
-				message.save_message_to_files()
-				
-				# Send "FF" followed by a carriage return after receiving the data
+				# Tell the client we are ready to accept all the pending messages
+				self.send_data(f"FS {c * pending_messages}\r")  
+				all_messages = self._wait_for_messages()  # One big binary blob for all messages
+				next_index = 0  # Start index for processing the received data
+
+				# <debug>
+				debug_filename = f"{MAILBOX_FOLDER_NAME}/debug-{len(all_messages)}.b2f"
+				with open(debug_filename, "wb") as f:
+					f.write(all_messages)
+				# </debug>
+
+				while not self.message_queue.empty():
+					message = self.message_queue.get()  # Get the first message in the queue
+					self._log_debug(f"Processing message ID: {message.message_id}")
+					
+					# Await bytes from the client
+					# self.send_data("FS Y\r")  # Send the prompt to the client
+					# data = self._wait_for_data(message.uncompressed_size)
+					# self._log_debug(f"Received {len(data)} bytes from client")
+					
+					# <debug>
+					message.capture(all_messages)  # Record the raw data
+					next_index = message.parse()  # Parse the message at the beginning of all_messages and figure out where the next one starts
+					message.save_message_to_files()
+					
+					# message.record_messsage_data(data[:message.compressed_size])  # Record the message data
+
+					all_messages = all_messages[next_index:]  # Remove the processed data from the buffer
+					
+				# Send "FF" followed by a carriage return after receiving the messages
 				self.send_data("FF\r")
-		
+			
 		except Exception as e:
 			self._log_debug(f"Error handling end of proposal: {e}")
 			self._close_connection()  # Close the connection in case of an error
 
 	def _handle_no_messages(self, message):
 		"""Handle the 'FF' request indicating no messages to process."""
-		self._log_debug(f"Handling no messages: {message}")
+		self._log_debug(f"No message condition: {message}")
 		
 		# Send "FQ" followed by a carriage return
 		self.send_data("FQ\r")
 		self._log_debug("Sent 'FQ' indicating no messages")
 
-	def _wait_for_data(self, expected_size):
-		"""Wait for the expected amount of data from the client."""
+	def _wait_for_messages(self):
+		"""Wait for all data from the client -- may include multiple messages"""
 		# received_data = b""
 		received_data = bytearray()
-		self._log_debug(f"Ready to receive message data from client -- expected size {expected_size}")
+		self._log_debug(f"Ready to receive message data from client")
 		try:
-			while len(received_data) < expected_size:
+			while True:
 				# Receive in chunks (you can adjust the chunk size if necessary)
 				# chunk = self.connection.recv(min(4096, expected_size - len(received_data)))
 				chunk = self.connection.recv(4096)
 				if chunk is not None:
 					self._log_debug(f"Received chunk of length {len(chunk)}")
 				else:
-					self._log_debug("connection.recv() returned None")
-				if not chunk:
 					break  # If no more data is received, exit the loop
 				received_data += chunk
 
 			# Log the data received
-			self._log_debug(f"Received {len(received_data)} bytes of data, expected {expected_size}")
-			if len(received_data) < expected_size:
-				self._log_debug("Warning: Received less data than expected.")
+			self._log_debug(f"Received {len(received_data)} bytes of data")
 			
 			return received_data
 		except socket.timeout:
 			return received_data
+
+	# def _wait_for_data(self, expected_size):
+	# 	"""Wait for the expected amount of data from the client."""
+	# 	# received_data = b""
+	# 	received_data = bytearray()
+	# 	self._log_debug(f"Ready to receive message data from client -- expected size {expected_size}")
+	# 	try:
+	# 		while len(received_data) < expected_size:
+	# 			# Receive in chunks (you can adjust the chunk size if necessary)
+	# 			# chunk = self.connection.recv(min(4096, expected_size - len(received_data)))
+	# 			chunk = self.connection.recv(4096)
+	# 			if chunk is not None:
+	# 				self._log_debug(f"Received chunk of length {len(chunk)}")
+	# 			else:
+	# 				self._log_debug("connection.recv() returned None")
+	# 			if not chunk:
+	# 				break  # If no more data is received, exit the loop
+	# 			received_data += chunk
+
+	# 		# Log the data received
+	# 		self._log_debug(f"Received {len(received_data)} bytes of data, expected {expected_size}")
+	# 		if len(received_data) < expected_size:
+	# 			self._log_debug("Warning: Received less data than expected.")
+			
+	# 		return received_data
+	# 	except socket.timeout:
+	# 		return received_data
 
 	def _close_connection(self):
 		if self.connection:
