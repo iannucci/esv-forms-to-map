@@ -27,7 +27,11 @@ class WinlinkServer:
 	def start_server(self):
 		"""Main listening loop that accepts new connections."""
 		server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		server_socket.bind((self.host, self.port))
+		try:
+			server_socket.bind((self.host, self.port))
+		except socket.error as e:
+			print(f"Error binding to {self.host}:{self.port} - {e}")
+			return
 		server_socket.listen(SIMULTANEOUS_CONNECTION_MAX)  
 		print(f"Server is listening on {self.host}:{self.port}")
 

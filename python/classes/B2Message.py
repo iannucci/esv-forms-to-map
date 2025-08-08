@@ -35,17 +35,22 @@ __status__ = "Experimental"
 # byte value using this VB.NET code:
 # CByte(((intCheckSum And &HFF) * -1) And &HFF)
 
+import subprocess
+import platform
+import os
 import struct
 import logging
-from classes.LZW import lzw_decompress
+import tempfile
 
 SOH = 0x01
 NUL = 0x00
 STX = 0x02
 EOT = 0x04
 
+GO_EXECUTABLE = 'decompress_lzhuf'
+
 class B2Message:
-	def __init__(self, message_id, raw_data, uncompressed_size, compressed_size, enable_debug=False):
+	def __init__(self, message_id, raw_data, decompressed_size, compressed_size, enable_debug=False):
 		self.message_id = message_id  # for debugging
 		self.enable_debug = enable_debug
 		self.raw_data = raw_data
@@ -54,11 +59,12 @@ class B2Message:
 		self.offset = None
 		self.transmitted_checksum = None
 		self.compressed_data = bytearray()
+		self.compressed_size = compressed_size
+		self.decompressed_data = None
+		self.decompressed_size = decompressed_size
 		self.headers = None
 		self.body = None
 		self.attachments = None
-		self.uncompressed_size = uncompressed_size
-		self.compressed_size = compressed_size
 
 		# Set up logging
 		self.logger = logging.getLogger(__name__)
@@ -160,7 +166,7 @@ class B2Message:
 					self._log_debug(f"Checksum match")
 					break
 			else:
-				print(f'{self.raw_data[raw_index-1]:02X} {self.raw_data[raw_index]:02X}')
+				# print(f'{self.raw_data[raw_index-1]:02X} {self.raw_data[raw_index]:02X}')
 				raise ValueError(f"Malformed message block at index {raw_index} -- expected STX or EOT, got 0x{self.raw_data[raw_index]:02X}")
 
 		# The first two bytes of the compressed data are a CRC-16.
@@ -174,27 +180,30 @@ class B2Message:
 		else:
 			raise ValueError(f"Compressed message size {compressed_data_len} does not match proposal {self.compressed_size}")
 
-		uncompressed_data_len = int.from_bytes(self.compressed_data[2:6], byteorder='little')
-		if uncompressed_data_len == self.uncompressed_size:
-			self._log_debug(f"Uncompressed message size matches proposal: {uncompressed_data_len}")
+		decompressed_data_len = int.from_bytes(self.compressed_data[2:6], byteorder='little')
+		if decompressed_data_len == self.decompressed_size:
+			self._log_debug(f"Decompressed message size matches proposal: {decompressed_data_len}")
 		else:
-			raise ValueError(f"Uncompressed message size {uncompressed_data_len} does not match proposal {self.uncompressed_size}")
+			raise ValueError(f"Decompressed message size {decompressed_data_len} does not match proposal {self.decompressed_size}")
 
 		try:
-			# <DEBUGGING>
-			with open(f"go/testdata/{self.message_id}-with-crc16.Z", 'wb') as f:
-				f.write(self.compressed_data)  # Do not skip over the CRC-16 and the 4 byte length field
-			# </DEBUGGING>
-
-
-			
-			decompressed_data = lzw_decompress(self.compressed_data[6:])
-			decoded_data = decompressed_data.decode('ascii', errors='replace')
-			print("Decompressed:", decoded_data)
-			self.headers, self.body_and_attachments = decoded_data.split("\n\n", 1)
-			self.body, self.attachments = self._split_body_and_attachments()
+			with tempfile.NamedTemporaryFile(delete=False, mode='wb') as compressed_file:
+				compressed_file_name = compressed_file.name
+				compressed_file.write(self.compressed_data)
+				compressed_file.close()
+				with open(compressed_file_name, 'rb') as compressed_file:
+					with tempfile.NamedTemporaryFile(delete=False, mode='w') as decompressed_file:
+						decompressed_file_name = decompressed_file.name
+						result = subprocess.run([GO_EXECUTABLE, compressed_file_name, decompressed_file_name], capture_output=True, text=True)
+						decompressed_file.close()
+						with open(decompressed_file_name, 'rb') as decompressed_file:
+							self.decompressed_data = decompressed_file.read().decode('ascii', errors='ignore')
+							# print("Decompressed:\r\n", self.decompressed_data)
+							self.headers, self.body_and_attachments = self.decompressed_data.split("\r\n\r\n", 1)
+							self.body, self.attachments = self._split_body_and_attachments()
 		except Exception as e:
 			self.logger.error(f"Decompression failed: {e}")
+		return (self.compressed_data, self.decompressed_data)
 
 	def _split_body_and_attachments(self):
 		"""Split the body from binary attachments in the message."""

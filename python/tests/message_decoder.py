@@ -20,11 +20,17 @@ import logging
 from classes.B2Message import B2Message 
 
 def extract(filename, uncompressed_len, compressed_len):
-	with open(f'{this_path}/{filename}', 'rb') as f:
+	with open(f'{this_path}/testdata/{filename}.b2f', 'rb') as f:
 		raw_data = f.read()
-	b2 = B2Message(raw_data, uncompressed_len, compressed_len, True)
+	z, uncompressed = B2Message(filename, raw_data, uncompressed_len, compressed_len, True)
+
+	# <DEBUGGING>
+	with open(f'{this_path}/testdata/{filename}.Z', 'wb') as f:
+		f.write(z)  # Do not skip over the CRC-16 and the 4 byte length field
+	# </DEBUGGING>
+
 	return True
 
 # FC EM MQ2TOYZRMM2D 22514 22314
-if extract('MQ2TOYZRMM2D_message_with_header.b2f', 22514, 22314):
+if extract('MQ2TOYZRMM2D', 22514, 22314):
     print('Success')

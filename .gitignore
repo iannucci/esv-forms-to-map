@@ -1,4 +1,15 @@
 
 users.json
 mailbox/
-src/classes/__pycache__/
+python/__pycache__/
+python/classes/__pycache__/
+python/tests/__pycache__/
+build/
+*.exe
+*.so
+*.dylib
+*.pyd
+*.o
+*.obj
+*.pyc
+*.pyo

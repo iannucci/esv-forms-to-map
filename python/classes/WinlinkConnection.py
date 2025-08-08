@@ -240,7 +240,7 @@ class WinlinkConnection:
 			# Log the extracted parameters for debugging
 			self._log_debug(f"Author: {self.author}, Version: {self.version}, Feature List: {self.feature_list}")
 		else:
-			print(f"Server: Invalid SID format. Closing connection to {self.address}")
+			self._log_debug(f"Server: Invalid SID format. Closing connection to {self.address}")
 			self._close_connection()  # Close the connection if format is incorrect
 			self.next_state = CLOSE_CONNECTION  # Close the connection
 
@@ -290,7 +290,7 @@ class WinlinkConnection:
 				message.save_message_to_files()
 				
 				# Send "FF" followed by a carriage return after receiving the data
-				# self.send_data("FF\r")
+				self.send_data("FF\r")
 		
 		except Exception as e:
 			self._log_debug(f"Error handling end of proposal: {e}")
