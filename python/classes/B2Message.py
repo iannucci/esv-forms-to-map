@@ -49,6 +49,12 @@ EOT = 0x04
 
 GO_EXECUTABLE = 'decompress_lzhuf'
 
+class B2Attachment:
+	def __init__(self, filename, size):
+		self.filename = filename  # Name of the attachment file
+		self.data = None
+		self.size = size  # SExpected size in bytes
+
 class B2Message:
 	def __init__(self, message_id, raw_data, decompressed_size, compressed_size, enable_debug=False):
 		self.message_id = message_id  # for debugging
@@ -62,9 +68,9 @@ class B2Message:
 		self.compressed_size = compressed_size
 		self.decompressed_data = None
 		self.decompressed_size = decompressed_size
-		self.headers = None
-		self.body = None
-		self.attachments = None
+		self.headers = ""
+		self.body = ""
+		self.attachments = []
 
 		# Set up logging
 		self.logger = logging.getLogger(__name__)
@@ -197,25 +203,57 @@ class B2Message:
 						result = subprocess.run([GO_EXECUTABLE, compressed_file_name, decompressed_file_name], capture_output=True, text=True)
 						decompressed_file.close()
 						with open(decompressed_file_name, 'rb') as decompressed_file:
-							self.decompressed_data = decompressed_file.read().decode('ascii', errors='ignore')
-							# print("Decompressed:\r\n", self.decompressed_data)
-							self.headers, self.body_and_attachments = self.decompressed_data.split("\r\n\r\n", 1)
-							self.body, self.attachments = self._split_body_and_attachments()
+							self.decompressed_data = decompressed_file.read()   #.decode('ascii', errors='ignore')
+							self._extract_message_parts()
 		except Exception as e:
 			self.logger.error(f"Decompression failed: {e}")
 		return (self.compressed_data, self.decompressed_data)
 
-	def _split_body_and_attachments(self):
-		"""Split the body from binary attachments in the message."""
-		# Assuming binary attachments are base64-encoded and follow a specific delimiter in the message.
-		# This part needs to be adjusted based on how the body and attachments are structured in the message.
-		body = ""
-		attachments = ""
+	def _extract_message_parts(self):
+		"""Extract headers and body from the decompressed data."""
+		if self.decompressed_data:
+			# Format of the message at this stage:
+			# Headers in ASCII, each line terminated by \r\n
+			#   <header1> <\r\n>
+			#   <header2> <\r\n>
+			#   ...
+			#   <\r\n>  The header has no blank lines, so searching for <\r\n\r\n> is safe
+			# Body is in ASCII and attachments are in binary
+			#   <body> (if any) <\r\n> The body does not use <\r> for line separation
+			#   <attachment1> (if any) <\r\n\r\n>
+			#   <attachment2> (if any) <\r\n\r\n>
+			#   ...
+			#   <\r\n\r\n>
+			header_binary, body_and_attachments_binary = self.decompressed_data.split(b"\r\n\r\n", 1)
+			body_binary, attachment_binary = body_and_attachments_binary.split(b"\r\n", 1)
+			# self._log_debug(f"Message parts: {len(message_parts)}")
+			# for part in message_parts:
+			# 	self._log_debug(f"Size: {len(part)}")
+			self.headers = header_binary.decode('ascii', errors='ignore') 
+			header_lines = self.headers.split("\n")
+			body_length = 0
+			for line in header_lines:
+				parts = line.split()
+				if line.startswith("File: "):
+					b2attachment = B2Attachment(parts[2], int(parts[1]))
+					self.attachments.append(b2attachment)
+				if line.startswith("Body: "):
+					body_length = int(parts[1]) if len(parts) > 1 else 0
+			if body_length == 0:
+				self.body = ""
+				# if len(self.attachments) > 0 and len(message_parts) > 1:
+				# 	attachment_binary = message_parts[1][2:]  
+			else:
+				self.body = body_binary.decode('ascii', errors='ignore')
+				# if len(message_parts) > 2:
+				# 	attachment_binary = message_parts[2][2:]
 
-		# For simplicity, let's assume attachments are marked with a specific delimiter like '[ATTACHMENT]'.
-		if '[ATTACHMENT]' in self.body_and_attachments:
-			self.body, self.attachments = self.body_and_attachments.split('[ATTACHMENT]', 1)
+			for attachment in self.attachments:
+				self._log_debug(f"Attachment expected size {attachment.size} Available {len(attachment_binary)}")
+				if attachment.size + 2 <= len(attachment_binary):
+					attachment.data = attachment_binary[:attachment.size]
+					self._log_debug(f"Extracted attachment {attachment.filename} of size {attachment.size}")
+					# Remove the extracted data from the binary stream
+					attachment_binary = attachment_binary[attachment.size+2:]
 		else:
-			self.body = self.body_and_attachments  # No attachments, all is body
-
-		return self.body, self.attachments
+			self.logger.error("Decompressed data is empty, cannot extract headers and body.")

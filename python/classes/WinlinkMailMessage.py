@@ -32,8 +32,8 @@ class WinlinkMailMessage:
 		if not os.path.exists(MAILBOX_FOLDER_NAME):
 			os.makedirs(MAILBOX_FOLDER_NAME)
 
-		# julian_date = self.time_created.strftime("%Y%m%d-%H%M%S")
-		self.filename = f"{MAILBOX_FOLDER_NAME}/{self.message_id}"
+		julian_date = self.time_created.strftime("%Y%m%d%H%M%S")
+		self.filename = f"{MAILBOX_FOLDER_NAME}/{julian_date}-{self.message_id}"
 
 		# Set up logging
 		self.logger = logging.getLogger(__name__)
@@ -54,8 +54,8 @@ class WinlinkMailMessage:
 		"""Capture the raw data and decode it."""
 		# Decode the raw data
 		self.b2 = B2Message(self.message_id, data, self.uncompressed_size, self.compressed_size, enable_debug=self.enable_debug)
-		self._log_debug(f"B2 subject: {self.b2.subject}")
-		self._save_raw_data_to_file()
+		# self._log_debug(f"B2 subject: {self.b2.subject}")
+		# self._save_raw_data_to_file()
 
 	def save_message_to_files(self):
 		"""Save the raw data and the decoded data to files."""
@@ -105,12 +105,10 @@ class WinlinkMailMessage:
 	def _save_attachments_to_files(self):
 		"""Save any binary attachments to separate .bin files."""
 		try:
-			if self.b2.attachments is not None:
-				# For each attachment, we decode and save it as a binary file
-				attachment_data = base64.b64decode(self.b2.attachments)  # Decode base64-encoded attachment
-				attachment_filename = f"{self.filename}-attachment.bin"
+			for attachment in self.b2.attachments:
+				attachment_filename = f"{self.filename}-{attachment.filename}"
 				with open(attachment_filename, 'wb') as f:
-					f.write(attachment_data)
+					f.write(attachment.data)
 				self._log_debug(f"Attachment saved to {attachment_filename}")
 		except Exception as e:
 			self._log_debug(f"Error saving attachments: {e}")
