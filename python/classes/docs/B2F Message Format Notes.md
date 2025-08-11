@@ -57,3 +57,19 @@ Once the blocks are extracted and concatenated, they have to be decompressed.
 <LENGTH>  Four byte length field in little-endian format.  It gives the length in bytes of the decompressed message, as a check.
 <COMPRESSED MESSAGE>
 ```
+
+
+```
+# Format of the message at this stage:
+# Headers in ASCII, each line terminated by \r\n
+#   <header1> <\r\n>
+#   <header2> <\r\n>
+#   ...
+#   <\r\n>  The header has no blank lines, so searching for <\r\n\r\n> is safe
+# Body is in ASCII and attachments are in binary
+#   <body> (if any) <\r\n> The body does not use <\r> for line separation
+#   <attachment1> (if any) <\r\n\r\n>
+#   <attachment2> (if any) <\r\n\r\n>
+#   ...
+#   <\r\n\r\n>
+```

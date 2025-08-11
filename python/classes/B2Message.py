@@ -14,6 +14,8 @@ import os
 import struct
 import logging
 import tempfile
+from datetime import datetime
+import json
 
 SOH = 0x01
 NUL = 0x00
@@ -30,7 +32,6 @@ class B2Attachment:
 
 class B2Message:
 	def __init__(self, message_id, raw_data, decompressed_size, compressed_size, enable_debug=False) -> int:
-		self.message_id = message_id  # for debugging
 		self.enable_debug = enable_debug
 		self.raw_data = raw_data
 		self.header_length = None
@@ -44,7 +45,14 @@ class B2Message:
 		self.headers = ""
 		self.body = ""
 		self.attachments = []
-
+		# Header fields
+		self.message_id = message_id
+		self.date = datetime.now()
+		self.body_length = 0
+		self.sender = ""
+		self.recipient = ""
+		self.subject = ""
+		self.position = {"latitude": 0.0, "longitude": 0.0}
 		# Set up logging
 		self.logger = logging.getLogger(__name__)
 		self._setup_logging()
@@ -71,8 +79,6 @@ class B2Message:
 		if self.raw_data[byte_index] != SOH:
 			raise ValueError("Expected SOH at start of message")
 		self._log_debug(f"Found SOH")
-		# raw_data_len = len(self.raw_data)
-		# self._log_debug(f"Handling raw data block of length {raw_data_len}")
 		
 		# Position 1: One byte length field which covers the SUBJECT, a NUL, an ASCII LENGTH field called
 		# the OFFSET, and another NUL
@@ -105,33 +111,17 @@ class B2Message:
 				raise ValueError("Expected STX 0x06 before lead-bytes")
 			byte_index += 2
 			self.compressed_data[0:6] = self.raw_data[byte_index:byte_index+6] # these are the "lead bytes" and this probably
-																			 # NOT the right way to handle them
+																			   # NOT the right way to handle them
 			byte_index += 6
-			# compressed_index += 6
 
-		# Accumulate data in blocks:
-		# <STX><LEN><BYTES>  Len is one byte long and represents the length of <BYTES>
-		# <STX><LEN><BYTES>
-		# ...
-		# <EOT><CHECKSUM>
-
-		# Accumulate bytes of the compressed message until we reach EOT
 		while True: 
 			if self.raw_data[byte_index] == STX:
 				self._log_debug(f"Found STX at index {byte_index}")
 				byte_index += 1
 				stx_block_length = self.raw_data[byte_index] # from byte following this one to the next <STX> or <EOT>
 				self._log_debug(f"Found LENGTH of {stx_block_length} at index {byte_index}")
-				# with enough space left in the raw data?
 				byte_index += 1  # pointing to first data byte
 
-				# last_byte_index = byte_index + stx_block_length # pointing to the byte after the last data byte
-				# last_compressed_index = compressed_index + stx_block_length
-
-				# if last_byte_index > raw_data_len:
-				# if block_length > raw_data_len:
-
-				# 	raise ValueError(f"Malformed message block -- too short -- expected {last_byte_index} got {raw_data_len}")
 				self._log_debug(f"Expecting compressed block of {stx_block_length} bytes at index {byte_index}")
 				self.compressed_data.extend(self.raw_data[byte_index:byte_index+stx_block_length])
 				byte_index += stx_block_length
@@ -148,7 +138,6 @@ class B2Message:
 					self._log_debug(f"Checksum match")
 					break
 			else:
-				# print(f'{self.raw_data[byte_index-1]:02X} {self.raw_data[byte_index]:02X}')
 				raise ValueError(f"Malformed message block at index {byte_index} -- expected STX or EOT, got 0x{self.raw_data[byte_index]:02X}")
 
 		# CRC-16, LENGTH, and compressed message
@@ -179,49 +168,64 @@ class B2Message:
 							self._extract_message_parts()
 		except Exception as e:
 			self.logger.error(f"Decompression failed: {e}")
-		# return (self.compressed_data, self.decompressed_data)
+		self._log_debug(f"JSON: {self.json_header()}")
 		return byte_index  # Returns the index of the next unprocessed byte in raw_data
 
 	def _extract_message_parts(self):
 		"""Extract headers and body from the decompressed data."""
 		if self.decompressed_data:
-			# Format of the message at this stage:
-			# Headers in ASCII, each line terminated by \r\n
-			#   <header1> <\r\n>
-			#   <header2> <\r\n>
-			#   ...
-			#   <\r\n>  The header has no blank lines, so searching for <\r\n\r\n> is safe
-			# Body is in ASCII and attachments are in binary
-			#   <body> (if any) <\r\n> The body does not use <\r> for line separation
-			#   <attachment1> (if any) <\r\n\r\n>
-			#   <attachment2> (if any) <\r\n\r\n>
-			#   ...
-			#   <\r\n\r\n>
+
 			header_binary, body_and_attachments_binary = self.decompressed_data.split(b"\r\n\r\n", 1)
 			split_list = body_and_attachments_binary.split(b"\r\n", 1)
 			body_binary = split_list[0] if len(split_list) > 0 else b""
 			attachment_binary = split_list[1] if len(split_list) > 1 else b""
-			# self._log_debug(f"Message parts: {len(message_parts)}")
-			# for part in message_parts:
-			# 	self._log_debug(f"Size: {len(part)}")
 			self.headers = header_binary.decode('ascii', errors='ignore') 
 			header_lines = self.headers.split("\n")
-			body_length = 0
+			self.body_length = 0
 			for line in header_lines:
 				parts = line.split()
-				if line.startswith("File: "):
+				part = line.split(" ",1)
+				# Body: 28
+				# Date: 2025/08/08 20:40
+				# From: W6EI-2
+				# Subject: Test
+				# To: BOB
+				# File: 21385 39D0D08F-D670-435E-AEB6-FE2A2936E900.jpg
+				# X-Location: 37.420281N, 122.120632W (GPS)
+				if line.startswith("Body: "):
+					self.body_length = int(parts[1]) if len(parts) > 1 else 0
+				elif line.startswith("Date: "):  # Date: 2025/08/08 20:40
+					self.date = datetime.strptime(part[1], "%Y/%m/%d %H:%M") if len(part) > 1 else datetime.now()
+				elif line.startswith("From: "):
+					self.sender = part[1] if len(part) > 1 else "Unknown"
+				elif line.startswith("Subject: "):
+					self.subject = part[1] if len(part) > 1 else "Unknown"
+				elif line.startswith("To: "):
+					self.recipient = part[1] if len(part) > 1 else "Unknown"
+				elif line.startswith("X-Location: "):
+					i = line.replace(",", "").split()
+					if len(i) == 4:
+						lat = float(i[1][:-1])
+						if i[1][-1] == "N":
+							latitude = lat
+						else:
+							latitude = 0 - lat
+						lon = i[2][:-1]
+						if i[2][-1] == "E":
+							longitude = lon
+						else:
+							longitude = 0 - lon
+						self.position = { "latitude": latitude, "longitude": longitude}
+					else:
+						self.position = {"latitude": 0.0, "longitude": 0.0}
+					self.to = part[1] if len(part) > 1 else "Unknown"
+				elif line.startswith("File: "):
 					b2attachment = B2Attachment(parts[2], int(parts[1]))
 					self.attachments.append(b2attachment)
-				if line.startswith("Body: "):
-					body_length = int(parts[1]) if len(parts) > 1 else 0
-			if body_length == 0:
+			if self.body_length == 0:
 				self.body = ""
-				# if len(self.attachments) > 0 and len(message_parts) > 1:
-				# 	attachment_binary = message_parts[1][2:]  
 			else:
 				self.body = body_binary.decode('ascii', errors='ignore')
-				# if len(message_parts) > 2:
-				# 	attachment_binary = message_parts[2][2:]
 
 			for attachment in self.attachments:
 				self._log_debug(f"Attachment expected size {attachment.size} Available {len(attachment_binary)}")
@@ -232,3 +236,16 @@ class B2Message:
 					attachment_binary = attachment_binary[attachment.size+2:]
 		else:
 			self.logger.error("Decompressed data is empty, cannot extract headers and body.")
+
+	def json_header(self):
+		'''Produce JSON string of message header information'''
+		python_dict = {
+			"message_id": self.message_id,
+			"date": self.date,
+			"sender": self.sender,
+			"recipient": self.recipient,
+			"subject": self.subject,
+			"position": self.position
+		}
+
+		return json.dumps(python_dict, indent = 4, default=str)

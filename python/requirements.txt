@@ -1,0 +1,2 @@
+# requirements.txt
+	git+https://github.com/Vaelor/python-mattermost-driver.git

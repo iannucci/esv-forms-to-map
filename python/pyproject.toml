@@ -1,0 +1,8 @@
+    # pyproject.toml
+    [project]
+    name = "esv-forms-to-map"
+    version = "0.1.0"
+    dependencies = [
+        "python^3.11.7",
+        "mattermostdriver @ git+https://github.com/Vaelor/python-mattermost-driver.git@main"
+    ]

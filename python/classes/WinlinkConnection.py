@@ -35,15 +35,15 @@ class WinlinkConnection:
 		self.timeout = timeout  # Unified timeout value for all operations
 		self.enable_debug = enable_debug
 		self.client_callsign = None
-		self.client_password = None  # Save password as an instance variable
-		self.author = None  # Instance variable for author
-		self.version = None  # Instance variable for version (optional)
-		self.feature_list = None  # Instance variable for feature list
-		self.state = START  # Starting state
-		self.next_state = START  # Next state to transition to
-		self.forward_login_callsign = None  # Instance variable for forward login callsign
-		self.pickup_callsigns = []  # List to store pickup callsigns as tuples
-		self.message_queue = queue.Queue()  # Initialize a message queue to hold incoming messages
+		self.client_password = None  
+		self.author = None  
+		self.version = None  
+		self.feature_list = None  
+		self.state = START  
+		self.next_state = START  
+		self.forward_login_callsign = None  
+		self.pickup_callsigns = []  
+		self.message_queue = queue.Queue()  
 		
 		# Set up logging
 		self.logger = logging.getLogger(__name__)
@@ -258,13 +258,10 @@ class WinlinkConnection:
 
 			# Create a new Message instance with the extracted data
 			new_message = WinlinkMailMessage(message_type, message_id, uncompressed_size, compressed_size, enable_debug=self.enable_debug)
-
-			# Push the new message into the message queue for later processing
 			self.message_queue.put(new_message)
 			self._log_debug(f"Message added to queue: {new_message.message_id} (Type: {new_message.message_type})")
 		
 		else:
-			# Handle invalid message format
 			self._log_debug("Invalid message proposal format")
 
 	def _handle_end_of_proposals(self, message):
@@ -277,32 +274,16 @@ class WinlinkConnection:
 				c = 'Y'
 				# Tell the client we are ready to accept all the pending messages
 				self.send_data(f"FS {c * pending_messages}\r")  
-				all_messages = self._wait_for_messages()  # One big binary blob for all messages
+				raw_message_data = self._wait_for_messages()  # One big binary blob for all messages
 				next_index = 0  # Start index for processing the received data
-
-				# <debug>
-				debug_filename = f"{MAILBOX_FOLDER_NAME}/debug-{len(all_messages)}.b2f"
-				with open(debug_filename, "wb") as f:
-					f.write(all_messages)
-				# </debug>
 
 				while not self.message_queue.empty():
 					message = self.message_queue.get()  # Get the first message in the queue
 					self._log_debug(f"Processing message ID: {message.message_id}")
-					
-					# Await bytes from the client
-					# self.send_data("FS Y\r")  # Send the prompt to the client
-					# data = self._wait_for_data(message.uncompressed_size)
-					# self._log_debug(f"Received {len(data)} bytes from client")
-					
-					# <debug>
-					message.capture(all_messages)  # Record the raw data
-					next_index = message.parse()  # Parse the message at the beginning of all_messages and figure out where the next one starts
+					message.capture(raw_message_data)  # Record the raw data
+					next_index = message.parse()  # Parse the message at the beginning of raw_message_data and figure out where the next one starts
 					message.save_message_to_files()
-					
-					# message.record_messsage_data(data[:message.compressed_size])  # Record the message data
-
-					all_messages = all_messages[next_index:]  # Remove the processed data from the buffer
+					raw_message_data = raw_message_data[next_index:]  # Remove the processed data from the buffer
 					
 				# Send "FF" followed by a carriage return after receiving the messages
 				self.send_data("FF\r")
@@ -341,33 +322,6 @@ class WinlinkConnection:
 			return received_data
 		except socket.timeout:
 			return received_data
-
-	# def _wait_for_data(self, expected_size):
-	# 	"""Wait for the expected amount of data from the client."""
-	# 	# received_data = b""
-	# 	received_data = bytearray()
-	# 	self._log_debug(f"Ready to receive message data from client -- expected size {expected_size}")
-	# 	try:
-	# 		while len(received_data) < expected_size:
-	# 			# Receive in chunks (you can adjust the chunk size if necessary)
-	# 			# chunk = self.connection.recv(min(4096, expected_size - len(received_data)))
-	# 			chunk = self.connection.recv(4096)
-	# 			if chunk is not None:
-	# 				self._log_debug(f"Received chunk of length {len(chunk)}")
-	# 			else:
-	# 				self._log_debug("connection.recv() returned None")
-	# 			if not chunk:
-	# 				break  # If no more data is received, exit the loop
-	# 			received_data += chunk
-
-	# 		# Log the data received
-	# 		self._log_debug(f"Received {len(received_data)} bytes of data, expected {expected_size}")
-	# 		if len(received_data) < expected_size:
-	# 			self._log_debug("Warning: Received less data than expected.")
-			
-	# 		return received_data
-	# 	except socket.timeout:
-	# 		return received_data
 
 	def _close_connection(self):
 		if self.connection:

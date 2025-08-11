@@ -13,3 +13,4 @@ build/
 *.obj
 *.pyc
 *.pyo
+python/tests/MattermostAuth.py
